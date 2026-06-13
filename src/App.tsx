@@ -261,23 +261,6 @@ function App() {
       return;
     }
 
-    const source = analyzeSourceUrl(draft.sourceUrl);
-
-    if (source.provider === "youtube" && !youtubeConfigured) {
-      setDraft((current) =>
-        applySourceMetadataPatch(current, {
-          genre: "YouTube Music",
-          imageUrl: source.thumbnailUrl,
-          note: "YouTube Data API 키가 없어 제목과 아티스트는 자동으로 가져오지 못했습니다."
-        })
-      );
-      setMetadataStatus("error");
-      setMetadataMessage(
-        "배포 사이트에서 제목/아티스트 자동 채움을 쓰려면 GitHub Actions secret에 VITE_YOUTUBE_DATA_API_KEY를 추가해야 합니다."
-      );
-      return;
-    }
-
     setMetadataStatus("loading");
     setMetadataMessage("");
 

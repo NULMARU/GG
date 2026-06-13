@@ -1,6 +1,7 @@
 import type { TrackDraft } from "../types";
 import { analyzeSourceUrl, extractYouTubeId } from "./source";
 import { fetchYouTubeVideoMetadata } from "./youtubeData";
+import { fetchYouTubeOembedMetadata } from "./youtubeOembed";
 
 export interface SourceMetadataPatch {
   title?: string;
@@ -47,6 +48,19 @@ export async function analyzeSourceMetadata(
         imageUrl: source.thumbnailUrl,
         note: "YouTube 링크를 감지했지만 영상 ID를 찾지 못했습니다."
       };
+    }
+
+    try {
+      const metadata = await fetchYouTubeOembedMetadata(source.externalUrl);
+      return {
+        title: metadata.title,
+        artist: metadata.authorName,
+        genre: "YouTube Music",
+        imageUrl: metadata.thumbnailUrl ?? source.thumbnailUrl,
+        note: "API 키 없이 YouTube oEmbed로 제목, 채널명, 썸네일을 가져왔습니다."
+      };
+    } catch {
+      // Some browsers or networks block oEmbed CORS. Fall back to the keyed API.
     }
 
     const metadata = await fetchYouTubeVideoMetadata(videoId);

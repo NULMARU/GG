@@ -1,8 +1,34 @@
 import { describe, expect, it } from "vitest";
 import { applySourceMetadataPatch, analyzeSourceMetadata } from "./sourceMetadata";
 import type { TrackDraft } from "../types";
+import { vi } from "vitest";
 
 describe("source metadata", () => {
+  it("fills YouTube metadata from oEmbed before requiring the Data API", async () => {
+    const originalFetch = globalThis.fetch;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          title: "CLAUDE DEBUSSY: CLAIR DE LUNE",
+          author_name: "CHANNEL 3 YOUTUBE",
+          thumbnail_url: "https://example.com/thumb.jpg"
+        })
+      )
+    );
+
+    await expect(
+      analyzeSourceMetadata("https://www.youtube.com/watch?v=CvFH_6DNRCY")
+    ).resolves.toMatchObject({
+      title: "CLAUDE DEBUSSY: CLAIR DE LUNE",
+      artist: "CHANNEL 3 YOUTUBE",
+      genre: "YouTube Music",
+      imageUrl: "https://example.com/thumb.jpg"
+    });
+
+    vi.stubGlobal("fetch", originalFetch);
+  });
+
   it("infers direct audio metadata from filenames", async () => {
     const metadata = await analyzeSourceMetadata("https://example.com/my-calm-song.mp3");
 
