@@ -104,7 +104,7 @@ export function analyzeSourceUrl(sourceUrl: string): SourceAnalysis {
       provider: "youtube",
       sourceUrl: trimmed,
       externalUrl: `https://www.youtube.com/watch?v=${youtubeId}`,
-      embedUrl: `https://www.youtube-nocookie.com/embed/${youtubeId}`,
+      embedUrl: `https://www.youtube.com/embed/${youtubeId}`,
       thumbnailUrl: `https://i.ytimg.com/vi/${youtubeId}/hqdefault.jpg`,
       canEmbed: true,
       label: "YouTube",
@@ -157,8 +157,29 @@ export function analyzeSourceUrl(sourceUrl: string): SourceAnalysis {
   };
 }
 
-export function withAutoplay(embedUrl: string, enabled: boolean): string {
-  if (!enabled) return embedUrl;
-  const separator = embedUrl.includes("?") ? "&" : "?";
-  return `${embedUrl}${separator}autoplay=1&rel=0`;
+export function withAutoplay(
+  embedUrl: string,
+  enabled: boolean,
+  origin?: string
+): string {
+  try {
+    const url = new URL(embedUrl);
+
+    if (url.hostname.includes("youtube.com")) {
+      url.searchParams.set("rel", "0");
+      url.searchParams.set("playsinline", "1");
+      url.searchParams.set("enablejsapi", "1");
+      if (origin) url.searchParams.set("origin", origin);
+    }
+
+    if (enabled) {
+      url.searchParams.set("autoplay", "1");
+    }
+
+    return url.toString();
+  } catch {
+    if (!enabled) return embedUrl;
+    const separator = embedUrl.includes("?") ? "&" : "?";
+    return `${embedUrl}${separator}autoplay=1`;
+  }
 }

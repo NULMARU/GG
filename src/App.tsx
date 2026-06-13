@@ -801,7 +801,13 @@ function DetailView({
   onRemoveTrack
 }: DetailViewProps) {
   const source = analyzeSourceUrl(track.sourceUrl);
-  const iframeSrc = source.embedUrl ? withAutoplay(source.embedUrl, autoplayArmed) : undefined;
+  const iframeSrc = source.embedUrl
+    ? withAutoplay(
+        source.embedUrl,
+        autoplayArmed,
+        typeof window === "undefined" ? undefined : window.location.origin
+      )
+    : undefined;
   const artUrl = track.imageUrl || source.thumbnailUrl;
 
   return (
@@ -840,6 +846,7 @@ function DetailView({
               src={iframeSrc}
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
               allowFullScreen
+              referrerPolicy="strict-origin-when-cross-origin"
             />
           ) : source.audioUrl ? (
             <div className="audio-player-shell">

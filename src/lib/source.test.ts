@@ -18,7 +18,7 @@ describe("source analysis", () => {
     expect(analysis.provider).toBe("youtube");
     expect(analysis.canEmbed).toBe(true);
     expect(analysis.sourceType).toBe("video");
-    expect(analysis.embedUrl).toContain("youtube-nocookie.com/embed/ylXk1LBvIqU");
+    expect(analysis.embedUrl).toContain("youtube.com/embed/ylXk1LBvIqU");
     expect(analysis.thumbnailUrl).toContain("i.ytimg.com/vi/ylXk1LBvIqU");
   });
 
@@ -45,7 +45,23 @@ describe("source analysis", () => {
       "https://example.com/embed/1"
     );
     expect(withAutoplay("https://example.com/embed/1", true)).toBe(
-      "https://example.com/embed/1?autoplay=1&rel=0"
+      "https://example.com/embed/1?autoplay=1"
     );
+  });
+
+  it("adds YouTube embed parameters for in-app playback", () => {
+    const url = new URL(
+      withAutoplay(
+        "https://www.youtube.com/embed/ylXk1LBvIqU",
+        true,
+        "https://nulmaru.github.io"
+      )
+    );
+
+    expect(url.searchParams.get("autoplay")).toBe("1");
+    expect(url.searchParams.get("rel")).toBe("0");
+    expect(url.searchParams.get("playsinline")).toBe("1");
+    expect(url.searchParams.get("enablejsapi")).toBe("1");
+    expect(url.searchParams.get("origin")).toBe("https://nulmaru.github.io");
   });
 });

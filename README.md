@@ -24,7 +24,7 @@ VITE_YOUTUBE_DATA_API_KEY
 ## 구현 범위
 
 - 전체 음악 목록에서 곡을 클릭하면 상세 재생 화면으로 이동
-- YouTube 링크는 `youtube-nocookie` iframe으로 재생
+- YouTube 링크는 일반 `youtube.com/embed` iframe과 origin/inline playback 파라미터로 앱 안에서 재생
 - Suno, Udio, Stable Audio 같은 음악생성앱 링크를 개인 창작 음악 소스로 저장
 - 직접 오디오 파일 URL(`mp3`, `wav`, `m4a`, `ogg`, `flac` 등)은 앱 안에서 `<audio>`로 재생
 - 사용자가 직접 링크와 기본 정보를 추가하면 `localStorage`에 저장
