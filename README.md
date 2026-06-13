@@ -13,7 +13,7 @@ npm run dev -- --port 5173
 
 ## GitHub Pages 배포
 
-`main` 브랜치에 push하면 `.github/workflows/deploy-pages.yml`이 `npm ci`, `npm run build`, GitHub Pages 배포를 실행합니다. GitHub 저장소의 `Settings > Pages`에서 Source를 `GitHub Actions`로 설정하면 스마트폰에서도 Pages URL로 접속할 수 있습니다.
+`main` 브랜치에 push하면 `.github/workflows/deploy-pages.yml`이 `npm ci`, `npm run build`를 실행한 뒤 `gh-pages` 브랜치에 정적 산출물을 배포합니다. GitHub 저장소의 `Settings > Pages`에서 Source를 `Deploy from a branch`, Branch를 `gh-pages` / `/root`로 설정하면 스마트폰에서도 Pages URL로 접속할 수 있습니다.
 
 YouTube 검색 기능까지 배포 사이트에서 쓰려면 저장소의 `Settings > Secrets and variables > Actions`에 아래 secret을 추가하세요.
 
