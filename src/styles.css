@@ -26,7 +26,8 @@ body {
 }
 
 button,
-input {
+input,
+textarea {
   font: inherit;
 }
 
@@ -611,7 +612,8 @@ legend {
   color: color-mix(in srgb, var(--surface) 76%, var(--accent-strong));
 }
 
-input {
+input,
+textarea {
   width: 100%;
   min-width: 0;
   min-height: 42px;
@@ -623,7 +625,15 @@ input {
   outline: none;
 }
 
-input:focus {
+textarea {
+  min-height: 118px;
+  resize: vertical;
+  padding: 11px 12px;
+  line-height: 1.5;
+}
+
+input:focus,
+textarea:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
 }
@@ -962,10 +972,20 @@ meter {
 }
 
 .lyrics-panel p,
+.lyrics-text,
 .source-note p {
   margin-bottom: 0;
   color: var(--muted);
   line-height: 1.55;
+}
+
+.lyrics-text {
+  max-height: 260px;
+  overflow: auto;
+  margin-top: 0;
+  white-space: pre-wrap;
+  font-family: inherit;
+  font-size: 0.95rem;
 }
 
 .source-note {

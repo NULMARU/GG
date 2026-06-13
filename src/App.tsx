@@ -107,22 +107,23 @@ function createUserTrack(draft: TrackDraft): Track {
     timeFit: draft.timeFit.length > 0 ? draft.timeFit : ["evening"],
     discoveryPrompt: draft.discoveryPrompt,
     imageUrl: draft.imageUrl || source.thumbnailUrl,
+    lyrics: draft.lyrics?.trim() || undefined,
     userAdded: true,
     addedAt: new Date().toISOString(),
     verification: {
       score: draft.sourceUrl ? 78 : 72,
       signals: [
-        { label: "personal intent", weight: 28 },
         {
           label:
             source.sourceType === "music-generation"
-              ? `${source.label} creative source`
+              ? `${source.label} 생성 소스`
               : draft.sourceUrl
-                ? "source provided"
-                : "search request",
-          weight: 24
+                ? source.label
+                : "검색 요청",
+          weight: 28
         },
-        { label: "local curation pending", weight: 20 }
+        { label: "개인 보관", weight: 24 },
+        { label: "수동 검토", weight: 20 }
       ],
       note: draft.sourceUrl
         ? source.sourceType === "music-generation"
@@ -810,6 +811,18 @@ function AddSourceDialog({
               />
             </label>
 
+            <label>
+              가사 직접 입력
+              <textarea
+                value={draft.lyrics ?? ""}
+                onChange={(event) =>
+                  onDraftChange({ ...draft, lyrics: event.currentTarget.value })
+                }
+                placeholder="가사가 필요한 곡만 직접 붙여 넣어 주세요."
+                rows={5}
+              />
+            </label>
+
             <fieldset>
               <legend>분위기</legend>
               <div className="chip-grid">
@@ -1156,7 +1169,11 @@ function DetailView({
 
         <section className="lyrics-panel">
           <h2>가사</h2>
-          <p>API 연결 예정</p>
+          {track.lyrics ? (
+            <pre className="lyrics-text">{track.lyrics}</pre>
+          ) : (
+            <p>직접 입력된 가사가 없습니다.</p>
+          )}
         </section>
 
         {source.sourceType === "music-generation" ? (

@@ -53,6 +53,7 @@ export interface Track {
   addedAt?: string;
   playCount?: number;
   liked?: boolean;
+  lyrics?: string;
 }
 
 export interface SourceAnalysis {
@@ -99,4 +100,5 @@ export interface TrackDraft {
   timeFit: TimeSegment[];
   discoveryPrompt?: string;
   imageUrl?: string;
+  lyrics?: string;
 }
