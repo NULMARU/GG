@@ -89,10 +89,12 @@ a {
 
 .brand-button,
 .icon-button,
+.add-source-button,
 .install-button,
 .secondary-button,
 .primary-button,
 .segmented button,
+.source-input-option,
 .chip,
 .recommendation-item,
 .track-card,
@@ -110,10 +112,12 @@ a {
 
 .brand-button:hover,
 .icon-button:hover,
+.add-source-button:hover,
 .install-button:hover,
 .secondary-button:hover,
 .primary-button:hover,
 .segmented button:hover,
+.source-input-option:hover,
 .chip:hover,
 .recommendation-item:hover,
 .track-card:hover,
@@ -139,6 +143,11 @@ a {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.top-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .time-pill,
@@ -175,9 +184,22 @@ a {
   background: var(--accent-strong);
 }
 
+.add-source-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  gap: 7px;
+  padding: 0 14px;
+  color: var(--surface);
+  font-weight: 800;
+  background: var(--accent);
+}
+
 .icon-button.active,
 .chip.selected,
-.segmented button.selected {
+.segmented button.selected,
+.source-input-option.selected {
   border-color: transparent;
   background: var(--accent);
   color: var(--surface);
@@ -459,6 +481,46 @@ h2 {
   font-weight: 800;
 }
 
+.modal-backdrop {
+  position: fixed;
+  z-index: 40;
+  inset: 0;
+  display: grid;
+  place-items: start center;
+  padding: 28px 12px;
+  overflow-y: auto;
+  background: rgba(10, 15, 18, 0.46);
+  backdrop-filter: blur(18px);
+}
+
+.source-modal {
+  display: grid;
+  width: min(760px, 100%);
+  max-height: calc(100vh - 56px);
+  gap: 16px;
+  overflow-y: auto;
+  padding: 18px;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, white);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 94%, white);
+  box-shadow: 0 30px 90px rgba(10, 15, 18, 0.3);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.modal-header h2 {
+  font-size: 1.25rem;
+}
+
+.modal-segmented {
+  margin-bottom: 0;
+}
+
 .primary-button {
   width: 100%;
   border-color: transparent;
@@ -486,6 +548,12 @@ h2 {
   gap: 12px;
 }
 
+.form-two-column {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
 label,
 fieldset {
   display: grid;
@@ -504,6 +572,43 @@ fieldset {
 
 legend {
   margin-bottom: 7px;
+}
+
+.source-input-menu {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.source-input-option {
+  display: grid;
+  min-height: 74px;
+  align-content: center;
+  gap: 4px;
+  padding: 10px;
+  text-align: left;
+}
+
+.source-input-option strong,
+.source-input-option small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-input-option strong {
+  font-size: 0.9rem;
+}
+
+.source-input-option small {
+  color: var(--muted);
+  font-size: 0.73rem;
+  font-weight: 800;
+}
+
+.source-input-option.selected small {
+  color: color-mix(in srgb, var(--surface) 76%, var(--accent-strong));
 }
 
 input {
@@ -905,6 +1010,11 @@ meter {
     justify-content: space-between;
   }
 
+  .add-source-button,
+  .install-button {
+    flex: 1 1 128px;
+  }
+
   .section-header {
     align-items: flex-start;
     flex-direction: column;
@@ -928,8 +1038,22 @@ meter {
   }
 
   .range-row,
+  .form-two-column,
   .verification-block {
     grid-template-columns: 1fr;
+  }
+
+  .modal-backdrop {
+    padding: 10px;
+  }
+
+  .source-modal {
+    max-height: calc(100vh - 20px);
+    padding: 14px;
+  }
+
+  .source-input-menu {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .signal-list div {

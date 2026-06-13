@@ -11,7 +11,8 @@ import {
   Plus,
   Search,
   Sparkles,
-  Trash2
+  Trash2,
+  X
 } from "lucide-react";
 import type { CSSProperties, FormEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
@@ -31,6 +32,40 @@ import {
 import type { Mood, ThemeProfile, TimeSegment, Track, TrackDraft } from "./types";
 
 const timeSegments: TimeSegment[] = ["morning", "midday", "evening", "night"];
+type AddMode = "link" | "find";
+type SourceInputKind = "youtube" | "generated" | "audio" | "web";
+
+const sourceInputOptions: Array<{
+  value: SourceInputKind;
+  label: string;
+  detail: string;
+  placeholder: string;
+}> = [
+  {
+    value: "youtube",
+    label: "YouTube",
+    detail: "영상/뮤직 링크",
+    placeholder: "https://www.youtube.com/watch?v=..."
+  },
+  {
+    value: "generated",
+    label: "Suno/Udio",
+    detail: "내가 만든 음악",
+    placeholder: "https://suno.com/song/... 또는 생성앱 공유 링크"
+  },
+  {
+    value: "audio",
+    label: "Audio URL",
+    detail: "mp3, wav 등",
+    placeholder: "https://example.com/my-track.mp3"
+  },
+  {
+    value: "web",
+    label: "기타 링크",
+    detail: "웹 소스 보관",
+    placeholder: "https://..."
+  }
+];
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -163,7 +198,8 @@ function App() {
   const [selectedId, setSelectedId] = useState(seedTracks[0].id);
   const [view, setView] = useState<"list" | "detail">("list");
   const [selectedMood, setSelectedMood] = useState<Mood | "all">("all");
-  const [addMode, setAddMode] = useState<"link" | "find">("link");
+  const [addMode, setAddMode] = useState<AddMode>("link");
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [draft, setDraft] = useState<TrackDraft>(defaultDraft);
   const [findQuery, setFindQuery] = useState("");
   const [youtubeResults, setYoutubeResults] = useState<YouTubeSearchItem[]>([]);
@@ -251,6 +287,7 @@ function App() {
     const track = createUserTrack(draft);
     setUserTracks((current) => [track, ...current]);
     setDraft(defaultDraft);
+    setIsAddModalOpen(false);
     openTrack(track);
   }
 
@@ -287,6 +324,7 @@ function App() {
     });
     setUserTracks((current) => [track, ...current]);
     setFindQuery("");
+    setIsAddModalOpen(false);
     openTrack(track);
   }
 
@@ -312,6 +350,7 @@ function App() {
     setFindQuery("");
     setYoutubeResults([]);
     setYoutubeStatus("idle");
+    setIsAddModalOpen(false);
     openTrack(track);
   }
 
@@ -319,6 +358,7 @@ function App() {
     const cloned = cloneCuratedTrack(track, findQuery || track.title);
     setUserTracks((current) => [cloned, ...current]);
     setFindQuery("");
+    setIsAddModalOpen(false);
     openTrack(cloned);
   }
 
@@ -389,6 +429,14 @@ function App() {
         </button>
 
         <div className="top-actions">
+          <button
+            className="add-source-button"
+            type="button"
+            onClick={() => setIsAddModalOpen(true)}
+          >
+            <Plus size={18} />
+            소스 추가
+          </button>
           <div className="time-pill">
             <Clock3 size={16} />
             <span>{timeSegmentLabels[currentSegment]}</span>
@@ -417,33 +465,8 @@ function App() {
           allTracks={tracks}
           selectedMood={selectedMood}
           recommendations={recommendations.combined}
-          addMode={addMode}
-          draft={draft}
-          findQuery={findQuery}
-          curatedMatches={curatedMatches}
-          youtubeConfigured={youtubeConfigured}
-          youtubeResults={youtubeResults}
-          youtubeStatus={youtubeStatus}
-          youtubeError={youtubeError}
-          metadataStatus={metadataStatus}
-          metadataMessage={metadataMessage}
           onSelectMood={setSelectedMood}
           onOpenTrack={openTrack}
-          onSetAddMode={setAddMode}
-          onDraftChange={(nextDraft) => {
-            setDraft(nextDraft);
-            setMetadataStatus("idle");
-            setMetadataMessage("");
-          }}
-          onToggleMood={toggleMood}
-          onToggleTimeFit={toggleTimeFit}
-          onAddLink={handleAddLink}
-          onAnalyzeSource={handleAnalyzeSource}
-          onFindQueryChange={setFindQuery}
-          onAddSearchRequest={addSearchRequest}
-          onAddCuratedMatch={addCuratedMatch}
-          onRunYoutubeSearch={runYoutubeSearch}
-          onAddYoutubeResult={addYoutubeResult}
         />
       ) : (
         <DetailView
@@ -456,6 +479,36 @@ function App() {
           onRemoveTrack={removeUserTrack}
         />
       )}
+
+      <AddSourceDialog
+        open={isAddModalOpen}
+        addMode={addMode}
+        draft={draft}
+        findQuery={findQuery}
+        curatedMatches={curatedMatches}
+        youtubeConfigured={youtubeConfigured}
+        youtubeResults={youtubeResults}
+        youtubeStatus={youtubeStatus}
+        youtubeError={youtubeError}
+        metadataStatus={metadataStatus}
+        metadataMessage={metadataMessage}
+        onClose={() => setIsAddModalOpen(false)}
+        onSetAddMode={setAddMode}
+        onDraftChange={(nextDraft) => {
+          setDraft(nextDraft);
+          setMetadataStatus("idle");
+          setMetadataMessage("");
+        }}
+        onToggleMood={toggleMood}
+        onToggleTimeFit={toggleTimeFit}
+        onAddLink={handleAddLink}
+        onAnalyzeSource={handleAnalyzeSource}
+        onFindQueryChange={setFindQuery}
+        onAddSearchRequest={addSearchRequest}
+        onAddCuratedMatch={addCuratedMatch}
+        onRunYoutubeSearch={runYoutubeSearch}
+        onAddYoutubeResult={addYoutubeResult}
+      />
     </main>
   );
 }
@@ -465,29 +518,8 @@ interface ListViewProps {
   allTracks: Track[];
   selectedMood: Mood | "all";
   recommendations: Track[];
-  addMode: "link" | "find";
-  draft: TrackDraft;
-  findQuery: string;
-  curatedMatches: Track[];
-  youtubeConfigured: boolean;
-  youtubeResults: YouTubeSearchItem[];
-  youtubeStatus: "idle" | "loading" | "success" | "error";
-  youtubeError: string;
-  metadataStatus: "idle" | "loading" | "success" | "error";
-  metadataMessage: string;
   onSelectMood: (mood: Mood | "all") => void;
   onOpenTrack: (track: Track) => void;
-  onSetAddMode: (mode: "link" | "find") => void;
-  onDraftChange: (draft: TrackDraft) => void;
-  onToggleMood: (mood: Mood) => void;
-  onToggleTimeFit: (segment: TimeSegment) => void;
-  onAddLink: (event: FormEvent<HTMLFormElement>) => void;
-  onAnalyzeSource: () => void;
-  onFindQueryChange: (query: string) => void;
-  onAddSearchRequest: () => void;
-  onAddCuratedMatch: (track: Track) => void;
-  onRunYoutubeSearch: () => void;
-  onAddYoutubeResult: (result: YouTubeSearchItem) => void;
 }
 
 function ListView({
@@ -495,29 +527,8 @@ function ListView({
   allTracks,
   selectedMood,
   recommendations,
-  addMode,
-  draft,
-  findQuery,
-  curatedMatches,
-  youtubeConfigured,
-  youtubeResults,
-  youtubeStatus,
-  youtubeError,
-  metadataStatus,
-  metadataMessage,
   onSelectMood,
-  onOpenTrack,
-  onSetAddMode,
-  onDraftChange,
-  onToggleMood,
-  onToggleTimeFit,
-  onAddLink,
-  onAnalyzeSource,
-  onFindQueryChange,
-  onAddSearchRequest,
-  onAddCuratedMatch,
-  onRunYoutubeSearch,
-  onAddYoutubeResult
+  onOpenTrack
 }: ListViewProps) {
   const personalCount = recommendations.filter((track) => track.catalogLane === "personal").length;
   const trendCount = recommendations.filter((track) => track.catalogLane === "trend").length;
@@ -589,29 +600,183 @@ function ListView({
             ))}
           </div>
         </section>
+      </aside>
+    </div>
+  );
+}
 
-        <section className="add-panel">
-          <div className="segmented">
-            <button
-              className={addMode === "link" ? "selected" : ""}
-              type="button"
-              onClick={() => onSetAddMode("link")}
-            >
-              <LinkIcon size={16} />
-              링크
-            </button>
-            <button
-              className={addMode === "find" ? "selected" : ""}
-              type="button"
-              onClick={() => onSetAddMode("find")}
-            >
-              <Search size={16} />
-              찾아줘
-            </button>
+interface AddSourceDialogProps {
+  open: boolean;
+  addMode: AddMode;
+  draft: TrackDraft;
+  findQuery: string;
+  curatedMatches: Track[];
+  youtubeConfigured: boolean;
+  youtubeResults: YouTubeSearchItem[];
+  youtubeStatus: "idle" | "loading" | "success" | "error";
+  youtubeError: string;
+  metadataStatus: "idle" | "loading" | "success" | "error";
+  metadataMessage: string;
+  onClose: () => void;
+  onSetAddMode: (mode: AddMode) => void;
+  onDraftChange: (draft: TrackDraft) => void;
+  onToggleMood: (mood: Mood) => void;
+  onToggleTimeFit: (segment: TimeSegment) => void;
+  onAddLink: (event: FormEvent<HTMLFormElement>) => void;
+  onAnalyzeSource: () => void;
+  onFindQueryChange: (query: string) => void;
+  onAddSearchRequest: () => void;
+  onAddCuratedMatch: (track: Track) => void;
+  onRunYoutubeSearch: () => void;
+  onAddYoutubeResult: (result: YouTubeSearchItem) => void;
+}
+
+function AddSourceDialog({
+  open,
+  addMode,
+  draft,
+  findQuery,
+  curatedMatches,
+  youtubeConfigured,
+  youtubeResults,
+  youtubeStatus,
+  youtubeError,
+  metadataStatus,
+  metadataMessage,
+  onClose,
+  onSetAddMode,
+  onDraftChange,
+  onToggleMood,
+  onToggleTimeFit,
+  onAddLink,
+  onAnalyzeSource,
+  onFindQueryChange,
+  onAddSearchRequest,
+  onAddCuratedMatch,
+  onRunYoutubeSearch,
+  onAddYoutubeResult
+}: AddSourceDialogProps) {
+  const [sourceInputKind, setSourceInputKind] = useState<SourceInputKind>("youtube");
+  const activeSourceOption =
+    sourceInputOptions.find((option) => option.value === sourceInputKind) ??
+    sourceInputOptions[0];
+
+  useEffect(() => {
+    if (!open) return;
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [onClose, open]);
+
+  if (!open) return null;
+
+  function chooseSourceKind(kind: SourceInputKind) {
+    setSourceInputKind(kind);
+
+    if (kind === "generated" && (draft.genre === "Personal" || draft.genre === "")) {
+      onDraftChange({ ...draft, genre: "Generated Music" });
+    }
+  }
+
+  return (
+    <div
+      className="modal-backdrop"
+      onMouseDown={(event) => {
+        if (event.currentTarget === event.target) onClose();
+      }}
+    >
+      <section
+        className="source-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="add-source-title"
+      >
+        <div className="modal-header">
+          <div>
+            <p className="eyebrow">Add Source</p>
+            <h2 id="add-source-title">음악 소스 추가</h2>
           </div>
+          <button className="icon-button" type="button" onClick={onClose} title="닫기">
+            <X size={18} />
+          </button>
+        </div>
 
-          {addMode === "link" ? (
-            <form className="add-form" onSubmit={onAddLink}>
+        <div className="segmented modal-segmented">
+          <button
+            className={addMode === "link" ? "selected" : ""}
+            type="button"
+            onClick={() => onSetAddMode("link")}
+          >
+            <LinkIcon size={16} />
+            직접 링크
+          </button>
+          <button
+            className={addMode === "find" ? "selected" : ""}
+            type="button"
+            onClick={() => onSetAddMode("find")}
+          >
+            <Search size={16} />
+            찾아줘
+          </button>
+        </div>
+
+        {addMode === "link" ? (
+          <form className="add-form" onSubmit={onAddLink}>
+            <fieldset>
+              <legend>소스 메뉴</legend>
+              <div className="source-input-menu">
+                {sourceInputOptions.map((option) => (
+                  <button
+                    className={
+                      sourceInputKind === option.value
+                        ? "source-input-option selected"
+                        : "source-input-option"
+                    }
+                    type="button"
+                    key={option.value}
+                    onClick={() => chooseSourceKind(option.value)}
+                  >
+                    <strong>{option.label}</strong>
+                    <small>{option.detail}</small>
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+
+            <label>
+              소스 링크
+              <input
+                value={draft.sourceUrl}
+                onChange={(event) =>
+                  onDraftChange({ ...draft, sourceUrl: event.currentTarget.value })
+                }
+                placeholder={activeSourceOption.placeholder}
+                required
+              />
+            </label>
+
+            <div className="source-analyzer">
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={onAnalyzeSource}
+                disabled={draft.sourceUrl.trim().length === 0 || metadataStatus === "loading"}
+              >
+                <Sparkles size={18} />
+                {metadataStatus === "loading" ? "분석 중" : "소스 분석"}
+              </button>
+              {metadataMessage ? (
+                <p className={metadataStatus === "error" ? "api-message" : "metadata-message"}>
+                  {metadataMessage}
+                </p>
+              ) : null}
+            </div>
+
+            <div className="form-two-column">
               <label>
                 제목
                 <input
@@ -632,200 +797,176 @@ function ListView({
                   placeholder="Claude Debussy"
                 />
               </label>
-              <label>
-                링크
-                <input
-                  value={draft.sourceUrl}
-                  onChange={(event) =>
-                    onDraftChange({ ...draft, sourceUrl: event.currentTarget.value })
-                  }
-                  placeholder="YouTube, Suno, Udio, mp3..."
-                  required
-                />
-              </label>
-              <div className="source-analyzer">
-                <button
-                  className="secondary-button"
-                  type="button"
-                  onClick={onAnalyzeSource}
-                  disabled={draft.sourceUrl.trim().length === 0 || metadataStatus === "loading"}
-                >
-                  <Sparkles size={18} />
-                  {metadataStatus === "loading" ? "분석 중" : "소스 분석"}
-                </button>
-                {metadataMessage ? (
-                  <p className={metadataStatus === "error" ? "api-message" : "metadata-message"}>
-                    {metadataMessage}
-                  </p>
-                ) : null}
-              </div>
-              <label>
-                장르
-                <input
-                  value={draft.genre}
-                  onChange={(event) =>
-                    onDraftChange({ ...draft, genre: event.currentTarget.value })
-                  }
-                  placeholder="Ambient"
-                />
-              </label>
+            </div>
 
-              <fieldset>
-                <legend>분위기</legend>
-                <div className="chip-grid">
-                  {moodOptions.map((option) => (
-                    <button
-                      className={draft.moods.includes(option.value) ? "chip selected" : "chip"}
-                      key={option.value}
-                      type="button"
-                      onClick={() => onToggleMood(option.value)}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-              </fieldset>
+            <label>
+              장르
+              <input
+                value={draft.genre}
+                onChange={(event) =>
+                  onDraftChange({ ...draft, genre: event.currentTarget.value })
+                }
+                placeholder="Ambient"
+              />
+            </label>
 
-              <fieldset>
-                <legend>시간대</legend>
-                <div className="chip-grid">
-                  {timeSegments.map((segment) => (
-                    <button
-                      className={draft.timeFit.includes(segment) ? "chip selected" : "chip"}
-                      key={segment}
-                      type="button"
-                      onClick={() => onToggleTimeFit(segment)}
-                    >
-                      {timeSegmentLabels[segment]}
-                    </button>
-                  ))}
-                </div>
-              </fieldset>
-
-              <div className="range-row">
-                <label>
-                  에너지
-                  <input
-                    min="1"
-                    max="10"
-                    type="range"
-                    value={draft.energy}
-                    onChange={(event) =>
-                      onDraftChange({
-                        ...draft,
-                        energy: Number(event.currentTarget.value)
-                      })
-                    }
-                  />
-                </label>
-                <label>
-                  밝기
-                  <input
-                    min="1"
-                    max="10"
-                    type="range"
-                    value={draft.valence}
-                    onChange={(event) =>
-                      onDraftChange({
-                        ...draft,
-                        valence: Number(event.currentTarget.value)
-                      })
-                    }
-                  />
-                </label>
-              </div>
-
-              <button className="primary-button" type="submit">
-                <Plus size={18} />
-                추가
-              </button>
-            </form>
-          ) : (
-            <div className="find-panel">
-              <label>
-                요청
-                <input
-                  value={findQuery}
-                  onChange={(event) => onFindQueryChange(event.currentTarget.value)}
-                  placeholder="예: 조용한 밤의 현대 클래식"
-                />
-              </label>
-              <div className="match-list">
-                {curatedMatches.map((track) => (
+            <fieldset>
+              <legend>분위기</legend>
+              <div className="chip-grid">
+                {moodOptions.map((option) => (
                   <button
-                    className="match-item"
+                    className={draft.moods.includes(option.value) ? "chip selected" : "chip"}
+                    key={option.value}
                     type="button"
-                    key={track.id}
-                    onClick={() => onAddCuratedMatch(track)}
+                    onClick={() => onToggleMood(option.value)}
                   >
-                    <span>
-                      <strong>{track.title}</strong>
-                      <small>{track.artist}</small>
-                    </span>
-                    <Plus size={16} />
+                    {option.label}
                   </button>
                 ))}
               </div>
-              <div className="google-search-block">
-                <div className="api-status">
-                  <span className={youtubeConfigured ? "status-dot ready" : "status-dot"} />
-                  <span>
-                    {youtubeConfigured
-                      ? "YouTube Data API 연결됨"
-                      : "YouTube Data API 키 필요"}
-                  </span>
-                </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>시간대</legend>
+              <div className="chip-grid">
+                {timeSegments.map((segment) => (
+                  <button
+                    className={draft.timeFit.includes(segment) ? "chip selected" : "chip"}
+                    key={segment}
+                    type="button"
+                    onClick={() => onToggleTimeFit(segment)}
+                  >
+                    {timeSegmentLabels[segment]}
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+
+            <div className="range-row">
+              <label>
+                에너지
+                <input
+                  min="1"
+                  max="10"
+                  type="range"
+                  value={draft.energy}
+                  onChange={(event) =>
+                    onDraftChange({
+                      ...draft,
+                      energy: Number(event.currentTarget.value)
+                    })
+                  }
+                />
+              </label>
+              <label>
+                밝기
+                <input
+                  min="1"
+                  max="10"
+                  type="range"
+                  value={draft.valence}
+                  onChange={(event) =>
+                    onDraftChange({
+                      ...draft,
+                      valence: Number(event.currentTarget.value)
+                    })
+                  }
+                />
+              </label>
+            </div>
+
+            <button className="primary-button" type="submit">
+              <Plus size={18} />
+              추가
+            </button>
+          </form>
+        ) : (
+          <div className="find-panel">
+            <label>
+              요청
+              <input
+                value={findQuery}
+                onChange={(event) => onFindQueryChange(event.currentTarget.value)}
+                placeholder="예: 조용한 밤의 현대 클래식"
+              />
+            </label>
+            <div className="match-list">
+              {curatedMatches.map((track) => (
                 <button
-                  className="secondary-button"
+                  className="match-item"
                   type="button"
-                  onClick={onRunYoutubeSearch}
-                  disabled={!youtubeConfigured || findQuery.trim().length === 0 || youtubeStatus === "loading"}
+                  key={track.id}
+                  onClick={() => onAddCuratedMatch(track)}
                 >
-                  <Search size={18} />
-                  {youtubeStatus === "loading" ? "검색 중" : "YouTube 검색"}
+                  <span>
+                    <strong>{track.title}</strong>
+                    <small>{track.artist}</small>
+                  </span>
+                  <Plus size={16} />
                 </button>
-                {youtubeStatus === "error" ? (
-                  <p className="api-message">{youtubeError}</p>
-                ) : null}
-                {youtubeResults.length > 0 ? (
-                  <div className="google-result-list">
-                    {youtubeResults.map((result) => (
-                      <button
-                        className="google-result-item"
-                        type="button"
-                        key={result.link}
-                        onClick={() => onAddYoutubeResult(result)}
-                      >
-                        {result.thumbnailUrl ? (
-                          <img src={result.thumbnailUrl} alt="" loading="lazy" />
-                        ) : (
-                          <span className="result-fallback">
-                            <Music2 size={18} />
-                          </span>
-                        )}
-                        <span>
-                          <strong>{result.title}</strong>
-                          <small>{result.channelTitle}</small>
-                        </span>
-                        <Plus size={16} />
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
+              ))}
+            </div>
+            <div className="google-search-block">
+              <div className="api-status">
+                <span className={youtubeConfigured ? "status-dot ready" : "status-dot"} />
+                <span>
+                  {youtubeConfigured
+                    ? "YouTube Data API 연결됨"
+                    : "YouTube Data API 키 필요"}
+                </span>
               </div>
               <button
-                className="primary-button"
+                className="secondary-button"
                 type="button"
-                onClick={onAddSearchRequest}
-                disabled={findQuery.trim().length === 0}
+                onClick={onRunYoutubeSearch}
+                disabled={
+                  !youtubeConfigured ||
+                  findQuery.trim().length === 0 ||
+                  youtubeStatus === "loading"
+                }
               >
                 <Search size={18} />
-                요청 저장
+                {youtubeStatus === "loading" ? "검색 중" : "YouTube 검색"}
               </button>
+              {youtubeStatus === "error" ? <p className="api-message">{youtubeError}</p> : null}
+              {youtubeResults.length > 0 ? (
+                <div className="google-result-list">
+                  {youtubeResults.map((result) => (
+                    <button
+                      className="google-result-item"
+                      type="button"
+                      key={result.link}
+                      onClick={() => onAddYoutubeResult(result)}
+                    >
+                      {result.thumbnailUrl ? (
+                        <img src={result.thumbnailUrl} alt="" loading="lazy" />
+                      ) : (
+                        <span className="result-fallback">
+                          <Music2 size={18} />
+                        </span>
+                      )}
+                      <span>
+                        <strong>{result.title}</strong>
+                        <small>{result.channelTitle}</small>
+                      </span>
+                      <Plus size={16} />
+                    </button>
+                  ))}
+                </div>
+              ) : null}
             </div>
-          )}
-        </section>
-      </aside>
+            <button
+              className="primary-button"
+              type="button"
+              onClick={onAddSearchRequest}
+              disabled={findQuery.trim().length === 0}
+            >
+              <Search size={18} />
+              요청 저장
+            </button>
+          </div>
+        )}
+      </section>
     </div>
   );
 }
