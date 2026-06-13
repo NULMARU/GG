@@ -32,8 +32,16 @@ import {
 import type { Mood, ThemeProfile, TimeSegment, Track, TrackDraft } from "./types";
 
 const timeSegments: TimeSegment[] = ["morning", "midday", "evening", "night"];
+const historyAppMarker = "healing-music-playlist";
 type AddMode = "link" | "find";
 type SourceInputKind = "youtube" | "generated" | "audio" | "web";
+type AppView = "list" | "detail";
+
+interface AppHistoryState {
+  app: typeof historyAppMarker;
+  view: AppView;
+  selectedId?: string;
+}
 
 const sourceInputOptions: Array<{
   value: SourceInputKind;
@@ -90,6 +98,41 @@ function createId(value: string): string {
     .replace(/^-|-$/g, "")
     .slice(0, 42);
   return `${slug || "track"}-${Date.now().toString(36)}`;
+}
+
+function isAppHistoryState(state: unknown): state is AppHistoryState {
+  return (
+    typeof state === "object" &&
+    state !== null &&
+    (state as AppHistoryState).app === historyAppMarker
+  );
+}
+
+function replaceListHistoryState(): void {
+  if (typeof window === "undefined") return;
+  window.history.replaceState(
+    { app: historyAppMarker, view: "list" } satisfies AppHistoryState,
+    "",
+    window.location.href
+  );
+}
+
+function pushDetailHistoryState(trackId: string): void {
+  if (typeof window === "undefined") return;
+
+  const state = {
+    app: historyAppMarker,
+    view: "detail",
+    selectedId: trackId
+  } satisfies AppHistoryState;
+  const currentState = window.history.state;
+
+  if (isAppHistoryState(currentState) && currentState.view === "detail") {
+    window.history.replaceState(state, "", window.location.href);
+    return;
+  }
+
+  window.history.pushState(state, "", window.location.href);
 }
 
 function createUserTrack(draft: TrackDraft): Track {
@@ -197,7 +240,7 @@ function getTrackTheme(track: Track): ThemeProfile {
 function App() {
   const [userTracks, setUserTracks] = useState<Track[]>(() => loadUserTracks());
   const [selectedId, setSelectedId] = useState(seedTracks[0].id);
-  const [view, setView] = useState<"list" | "detail">("list");
+  const [view, setView] = useState<AppView>("list");
   const [selectedMood, setSelectedMood] = useState<Mood | "all">("all");
   const [addMode, setAddMode] = useState<AddMode>("link");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -248,6 +291,32 @@ function App() {
   }, [userTracks]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    if (!isAppHistoryState(window.history.state)) {
+      replaceListHistoryState();
+    }
+
+    const onPopState = (event: PopStateEvent) => {
+      setIsAddModalOpen(false);
+
+      if (isAppHistoryState(event.state) && event.state.view === "detail") {
+        const trackExists = tracks.some((track) => track.id === event.state.selectedId);
+        if (trackExists && event.state.selectedId) {
+          setSelectedId(event.state.selectedId);
+          setView("detail");
+          return;
+        }
+      }
+
+      setView("list");
+    };
+
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [tracks]);
+
+  useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 60_000);
     return () => window.clearInterval(timer);
   }, []);
@@ -272,15 +341,31 @@ function App() {
   useEffect(() => {
     if (!autoplayArmed) return;
     const timedTrack = selectTrackForTime(tracks, now);
-    if (timedTrack) {
-      setSelectedId(timedTrack.id);
-      setView("detail");
+    if (timedTrack && (view !== "detail" || selectedId !== timedTrack.id)) {
+      openTrack(timedTrack);
     }
-  }, [autoplayArmed, now, tracks]);
+  }, [autoplayArmed, now, selectedId, tracks, view]);
 
   function openTrack(track: Track) {
+    pushDetailHistoryState(track.id);
     setSelectedId(track.id);
     setView("detail");
+  }
+
+  function returnToList() {
+    setIsAddModalOpen(false);
+
+    if (
+      typeof window !== "undefined" &&
+      isAppHistoryState(window.history.state) &&
+      window.history.state.view === "detail"
+    ) {
+      window.history.back();
+      return;
+    }
+
+    replaceListHistoryState();
+    setView("list");
   }
 
   function handleAddLink(event: FormEvent<HTMLFormElement>) {
@@ -403,6 +488,7 @@ function App() {
     if (!track.userAdded) return;
     setUserTracks((current) => current.filter((item) => item.id !== track.id));
     setSelectedId(seedTracks[0].id);
+    replaceListHistoryState();
     setView("list");
   }
 
@@ -422,7 +508,7 @@ function App() {
         <button
           className="brand-button"
           type="button"
-          onClick={() => setView("list")}
+          onClick={returnToList}
           title="전체 목록"
         >
           <Library size={20} />
@@ -474,7 +560,7 @@ function App() {
           track={selectedTrack}
           recommendations={recommendations.combined}
           autoplayArmed={autoplayArmed}
-          onBack={() => setView("list")}
+          onBack={returnToList}
           onOpenTrack={openTrack}
           onToggleLike={toggleLike}
           onRemoveTrack={removeUserTrack}
