@@ -309,6 +309,7 @@ function App() {
         }
       }
 
+      setAutoplayArmed(false);
       setView("list");
     };
 
@@ -354,6 +355,7 @@ function App() {
 
   function returnToList() {
     setIsAddModalOpen(false);
+    setAutoplayArmed(false);
 
     if (
       typeof window !== "undefined" &&
@@ -366,6 +368,19 @@ function App() {
 
     replaceListHistoryState();
     setView("list");
+  }
+
+  function toggleTimeAutoplay() {
+    if (autoplayArmed) {
+      setAutoplayArmed(false);
+      return;
+    }
+
+    setAutoplayArmed(true);
+    const timedTrack = selectTrackForTime(tracks, now);
+    if (timedTrack) {
+      openTrack(timedTrack);
+    }
   }
 
   function handleAddLink(event: FormEvent<HTMLFormElement>) {
@@ -526,16 +541,17 @@ function App() {
           </button>
           <div className="time-pill">
             <Clock3 size={16} />
-            <span>{timeSegmentLabels[currentSegment]}</span>
+            <span>현재 {timeSegmentLabels[currentSegment]}</span>
           </div>
           <button
-            className={autoplayArmed ? "icon-button active" : "icon-button"}
+            className={autoplayArmed ? "autoplay-button active" : "autoplay-button"}
             type="button"
-            onClick={() => setAutoplayArmed((value) => !value)}
-            title="시간대 자동 선곡"
+            onClick={toggleTimeAutoplay}
+            title={autoplayArmed ? "시간대 자동 선곡 끄기" : "시간대 자동 선곡 켜기"}
             aria-pressed={autoplayArmed}
           >
             <Clock3 size={18} />
+            <span>{autoplayArmed ? "자동 선곡 끄기" : "자동 선곡"}</span>
           </button>
           {installPrompt ? (
             <button className="install-button" type="button" onClick={installApp}>

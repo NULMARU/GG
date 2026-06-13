@@ -91,6 +91,7 @@ a {
 .brand-button,
 .icon-button,
 .add-source-button,
+.autoplay-button,
 .install-button,
 .secondary-button,
 .primary-button,
@@ -114,6 +115,7 @@ a {
 .brand-button:hover,
 .icon-button:hover,
 .add-source-button:hover,
+.autoplay-button:hover,
 .install-button:hover,
 .secondary-button:hover,
 .primary-button:hover,
@@ -197,7 +199,19 @@ a {
   background: var(--accent);
 }
 
+.autoplay-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  gap: 7px;
+  padding: 0 13px;
+  color: var(--muted);
+  font-weight: 800;
+}
+
 .icon-button.active,
+.autoplay-button.active,
 .chip.selected,
 .segmented button.selected,
 .source-input-option.selected {
@@ -1031,6 +1045,7 @@ meter {
   }
 
   .add-source-button,
+  .autoplay-button,
   .install-button {
     flex: 1 1 128px;
   }
