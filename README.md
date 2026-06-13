@@ -21,6 +21,14 @@ YouTube 검색 기능까지 배포 사이트에서 쓰려면 저장소의 `Setti
 VITE_YOUTUBE_DATA_API_KEY
 ```
 
+## 스마트폰 설치
+
+이 앱은 PWA로 구성되어 있어 Android Chrome/Samsung Internet에서 설치형 앱처럼 추가할 수 있습니다.
+
+1. 스마트폰에서 `https://nulmaru.github.io/GG/`를 엽니다.
+2. 브라우저 메뉴에서 `앱 설치` 또는 `홈 화면에 추가`를 선택합니다.
+3. 예전에 만든 바로가기가 있다면 삭제한 뒤 다시 추가해야 새 manifest와 아이콘이 적용됩니다.
+
 ## 구현 범위
 
 - 전체 음악 목록에서 곡을 클릭하면 상세 재생 화면으로 이동

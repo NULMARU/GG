@@ -89,6 +89,7 @@ a {
 
 .brand-button,
 .icon-button,
+.install-button,
 .secondary-button,
 .primary-button,
 .segmented button,
@@ -109,6 +110,7 @@ a {
 
 .brand-button:hover,
 .icon-button:hover,
+.install-button:hover,
 .secondary-button:hover,
 .primary-button:hover,
 .segmented button:hover,
@@ -159,6 +161,18 @@ a {
   width: 42px;
   height: 42px;
   place-items: center;
+}
+
+.install-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  gap: 7px;
+  padding: 0 13px;
+  color: var(--surface);
+  font-weight: 800;
+  background: var(--accent-strong);
 }
 
 .icon-button.active,

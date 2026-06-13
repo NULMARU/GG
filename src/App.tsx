@@ -1,6 +1,7 @@
 import {
   ArrowLeft,
   Clock3,
+  Download,
   ExternalLink,
   Heart,
   Library,
@@ -30,6 +31,11 @@ import {
 import type { Mood, ThemeProfile, TimeSegment, Track, TrackDraft } from "./types";
 
 const timeSegments: TimeSegment[] = ["morning", "midday", "evening", "night"];
+
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
+}
 
 const defaultDraft: TrackDraft = {
   title: "",
@@ -169,6 +175,7 @@ function App() {
     "idle" | "loading" | "success" | "error"
   >("idle");
   const [metadataMessage, setMetadataMessage] = useState("");
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [autoplayArmed, setAutoplayArmed] = useState(false);
   const [now, setNow] = useState(() => new Date());
 
@@ -206,6 +213,23 @@ function App() {
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 60_000);
     return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const onBeforeInstallPrompt = (event: Event) => {
+      event.preventDefault();
+      setInstallPrompt(event as BeforeInstallPromptEvent);
+    };
+
+    const onAppInstalled = () => setInstallPrompt(null);
+
+    window.addEventListener("beforeinstallprompt", onBeforeInstallPrompt);
+    window.addEventListener("appinstalled", onAppInstalled);
+
+    return () => {
+      window.removeEventListener("beforeinstallprompt", onBeforeInstallPrompt);
+      window.removeEventListener("appinstalled", onAppInstalled);
+    };
   }, []);
 
   useEffect(() => {
@@ -358,6 +382,13 @@ function App() {
     setView("list");
   }
 
+  async function installApp() {
+    if (!installPrompt) return;
+    await installPrompt.prompt();
+    await installPrompt.userChoice;
+    setInstallPrompt(null);
+  }
+
   const cssVars = themeToCssVars(activeTheme) as CSSProperties;
 
   return (
@@ -388,6 +419,12 @@ function App() {
           >
             <Clock3 size={18} />
           </button>
+          {installPrompt ? (
+            <button className="install-button" type="button" onClick={installApp}>
+              <Download size={17} />
+              설치
+            </button>
+          ) : null}
         </div>
       </header>
 
