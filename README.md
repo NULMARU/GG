@@ -28,6 +28,8 @@ VITE_YOUTUBE_DATA_API_KEY
 - Suno, Udio, Stable Audio 같은 음악생성앱 링크를 개인 창작 음악 소스로 저장
 - 직접 오디오 파일 URL(`mp3`, `wav`, `m4a`, `ogg`, `flac` 등)은 앱 안에서 `<audio>`로 재생
 - 사용자가 직접 링크와 기본 정보를 추가하면 `localStorage`에 저장
+- 링크 추가 화면에서 `소스 분석`을 누르면 YouTube Data API로 제목/채널명/썸네일을 자동 채움
+- 오디오 파일과 음악생성앱 링크는 파일명/서비스 유형 기반으로 기본 정보를 추정
 - “찾아줘” 요청은 로컬 큐레이션 카탈로그에서 먼저 매칭하고, YouTube Data API가 설정되어 있으면 YouTube 음악 결과에서도 추가 가능
 - 상세 화면은 소스 분석, 썸네일, 제목/아티스트/장르/분위기/검증 점수/검증 신호를 표시
 - 가사는 API 연결 전 자리만 유지
@@ -72,6 +74,8 @@ npm audit --audit-level=moderate
 - YouTube URL 분석 및 autoplay URL 생성
 - Suno/Udio/Stable Audio/직접 오디오 파일 소스 분석
 - YouTube Data API 검색 URL 생성 및 결과 정규화
+- YouTube 영상 메타데이터 자동 채움
+- 오디오 파일/음악생성앱 링크 기본 메타데이터 추정
 - 추천 레인의 50:50 비율
 - 객관 검증 점수 하한 필터
 - 시간대 판정 및 시간대 곡 선택

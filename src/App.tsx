@@ -18,6 +18,7 @@ import { moodOptions, seedTracks } from "./data/seedTracks";
 import { findCuratedMatches } from "./lib/discovery";
 import { recommendTracks } from "./lib/recommendations";
 import { analyzeSourceUrl, withAutoplay } from "./lib/source";
+import { analyzeSourceMetadata, applySourceMetadataPatch } from "./lib/sourceMetadata";
 import { loadUserTracks, saveUserTracks } from "./lib/storage";
 import { getTimeSegment, selectTrackForTime, timeSegmentLabels } from "./lib/timeSegments";
 import { getThemeForTrack, themeToCssVars, themeProfiles } from "./lib/themeEngine";
@@ -164,6 +165,10 @@ function App() {
     "idle" | "loading" | "success" | "error"
   >("idle");
   const [youtubeError, setYoutubeError] = useState("");
+  const [metadataStatus, setMetadataStatus] = useState<
+    "idle" | "loading" | "success" | "error"
+  >("idle");
+  const [metadataMessage, setMetadataMessage] = useState("");
   const [autoplayArmed, setAutoplayArmed] = useState(false);
   const [now, setNow] = useState(() => new Date());
 
@@ -223,6 +228,46 @@ function App() {
     setUserTracks((current) => [track, ...current]);
     setDraft(defaultDraft);
     openTrack(track);
+  }
+
+  async function handleAnalyzeSource() {
+    if (!draft.sourceUrl.trim()) {
+      setMetadataStatus("error");
+      setMetadataMessage("먼저 음악 소스 링크를 입력해 주세요.");
+      return;
+    }
+
+    const source = analyzeSourceUrl(draft.sourceUrl);
+
+    if (source.provider === "youtube" && !youtubeConfigured) {
+      setDraft((current) =>
+        applySourceMetadataPatch(current, {
+          genre: "YouTube Music",
+          imageUrl: source.thumbnailUrl,
+          note: "YouTube Data API 키가 없어 제목과 아티스트는 자동으로 가져오지 못했습니다."
+        })
+      );
+      setMetadataStatus("error");
+      setMetadataMessage(
+        "배포 사이트에서 제목/아티스트 자동 채움을 쓰려면 GitHub Actions secret에 VITE_YOUTUBE_DATA_API_KEY를 추가해야 합니다."
+      );
+      return;
+    }
+
+    setMetadataStatus("loading");
+    setMetadataMessage("");
+
+    try {
+      const metadata = await analyzeSourceMetadata(draft.sourceUrl);
+      setDraft((current) => applySourceMetadataPatch(current, metadata));
+      setMetadataStatus("success");
+      setMetadataMessage(metadata.note);
+    } catch (error) {
+      setMetadataStatus("error");
+      setMetadataMessage(
+        error instanceof Error ? error.message : "소스 정보를 분석하지 못했습니다."
+      );
+    }
   }
 
   function addSearchRequest() {
@@ -360,13 +405,20 @@ function App() {
           youtubeResults={youtubeResults}
           youtubeStatus={youtubeStatus}
           youtubeError={youtubeError}
+          metadataStatus={metadataStatus}
+          metadataMessage={metadataMessage}
           onSelectMood={setSelectedMood}
           onOpenTrack={openTrack}
           onSetAddMode={setAddMode}
-          onDraftChange={setDraft}
+          onDraftChange={(nextDraft) => {
+            setDraft(nextDraft);
+            setMetadataStatus("idle");
+            setMetadataMessage("");
+          }}
           onToggleMood={toggleMood}
           onToggleTimeFit={toggleTimeFit}
           onAddLink={handleAddLink}
+          onAnalyzeSource={handleAnalyzeSource}
           onFindQueryChange={setFindQuery}
           onAddSearchRequest={addSearchRequest}
           onAddCuratedMatch={addCuratedMatch}
@@ -401,6 +453,8 @@ interface ListViewProps {
   youtubeResults: YouTubeSearchItem[];
   youtubeStatus: "idle" | "loading" | "success" | "error";
   youtubeError: string;
+  metadataStatus: "idle" | "loading" | "success" | "error";
+  metadataMessage: string;
   onSelectMood: (mood: Mood | "all") => void;
   onOpenTrack: (track: Track) => void;
   onSetAddMode: (mode: "link" | "find") => void;
@@ -408,6 +462,7 @@ interface ListViewProps {
   onToggleMood: (mood: Mood) => void;
   onToggleTimeFit: (segment: TimeSegment) => void;
   onAddLink: (event: FormEvent<HTMLFormElement>) => void;
+  onAnalyzeSource: () => void;
   onFindQueryChange: (query: string) => void;
   onAddSearchRequest: () => void;
   onAddCuratedMatch: (track: Track) => void;
@@ -428,6 +483,8 @@ function ListView({
   youtubeResults,
   youtubeStatus,
   youtubeError,
+  metadataStatus,
+  metadataMessage,
   onSelectMood,
   onOpenTrack,
   onSetAddMode,
@@ -435,6 +492,7 @@ function ListView({
   onToggleMood,
   onToggleTimeFit,
   onAddLink,
+  onAnalyzeSource,
   onFindQueryChange,
   onAddSearchRequest,
   onAddCuratedMatch,
@@ -565,6 +623,22 @@ function ListView({
                   required
                 />
               </label>
+              <div className="source-analyzer">
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={onAnalyzeSource}
+                  disabled={draft.sourceUrl.trim().length === 0 || metadataStatus === "loading"}
+                >
+                  <Sparkles size={18} />
+                  {metadataStatus === "loading" ? "분석 중" : "소스 분석"}
+                </button>
+                {metadataMessage ? (
+                  <p className={metadataStatus === "error" ? "api-message" : "metadata-message"}>
+                    {metadataMessage}
+                  </p>
+                ) : null}
+              </div>
               <label>
                 장르
                 <input

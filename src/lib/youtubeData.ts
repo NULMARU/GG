@@ -11,6 +11,14 @@ export interface YouTubeSearchItem {
   thumbnailUrl?: string;
 }
 
+export interface YouTubeVideoMetadata {
+  title: string;
+  channelTitle: string;
+  description: string;
+  thumbnailUrl?: string;
+  publishedAt?: string;
+}
+
 interface RawYouTubeSearchItem {
   id?: {
     videoId?: string;
@@ -29,6 +37,28 @@ interface RawYouTubeSearchItem {
 
 interface RawYouTubeSearchResponse {
   items?: RawYouTubeSearchItem[];
+  error?: {
+    message?: string;
+  };
+}
+
+interface RawYouTubeVideoItem {
+  snippet?: {
+    title?: string;
+    description?: string;
+    channelTitle?: string;
+    publishedAt?: string;
+    thumbnails?: {
+      medium?: { url?: string };
+      high?: { url?: string };
+      default?: { url?: string };
+      maxres?: { url?: string };
+    };
+  };
+}
+
+interface RawYouTubeVideosResponse {
+  items?: RawYouTubeVideoItem[];
   error?: {
     message?: string;
   };
@@ -60,6 +90,17 @@ export function buildYouTubeSearchUrl(
   return url.toString();
 }
 
+export function buildYouTubeVideoUrl(
+  config: YouTubeDataConfig,
+  videoId: string
+): string {
+  const url = new URL("https://www.googleapis.com/youtube/v3/videos");
+  url.searchParams.set("key", config.apiKey);
+  url.searchParams.set("part", "snippet");
+  url.searchParams.set("id", videoId);
+  return url.toString();
+}
+
 export function normalizeYouTubeSearchItems(
   items: RawYouTubeSearchItem[] = []
 ): YouTubeSearchItem[] {
@@ -83,6 +124,25 @@ export function normalizeYouTubeSearchItems(
     });
 }
 
+export function normalizeYouTubeVideoMetadata(
+  item?: RawYouTubeVideoItem
+): YouTubeVideoMetadata | undefined {
+  const snippet = item?.snippet;
+  if (!snippet?.title) return undefined;
+
+  return {
+    title: snippet.title,
+    channelTitle: snippet.channelTitle ?? "YouTube",
+    description: snippet.description ?? "",
+    publishedAt: snippet.publishedAt,
+    thumbnailUrl:
+      snippet.thumbnails?.maxres?.url ??
+      snippet.thumbnails?.high?.url ??
+      snippet.thumbnails?.medium?.url ??
+      snippet.thumbnails?.default?.url
+  };
+}
+
 export async function searchYouTubeMusic(
   query: string,
   config = getYouTubeDataConfig()
@@ -100,4 +160,27 @@ export async function searchYouTubeMusic(
   }
 
   return normalizeYouTubeSearchItems(payload.items);
+}
+
+export async function fetchYouTubeVideoMetadata(
+  videoId: string,
+  config = getYouTubeDataConfig()
+): Promise<YouTubeVideoMetadata> {
+  if (!config) {
+    throw new Error(".env.local 또는 GitHub Actions secret에 YouTube Data API 키가 없습니다.");
+  }
+
+  const response = await fetch(buildYouTubeVideoUrl(config, videoId));
+  const payload = (await response.json()) as RawYouTubeVideosResponse;
+
+  if (!response.ok || payload.error) {
+    throw new Error(payload.error?.message ?? "YouTube 영상 정보를 가져오지 못했습니다.");
+  }
+
+  const metadata = normalizeYouTubeVideoMetadata(payload.items?.[0]);
+  if (!metadata) {
+    throw new Error("YouTube 영상 정보를 찾지 못했습니다.");
+  }
+
+  return metadata;
 }

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildYouTubeVideoUrl,
   buildYouTubeSearchUrl,
+  normalizeYouTubeVideoMetadata,
   normalizeYouTubeSearchItems,
   type YouTubeDataConfig
 } from "./youtubeData";
@@ -47,5 +49,32 @@ describe("YouTube Data API adapter", () => {
         thumbnailUrl: "https://example.com/high.jpg"
       }
     ]);
+  });
+
+  it("builds and normalizes video metadata requests", () => {
+    const url = new URL(buildYouTubeVideoUrl(config, "abc123"));
+    expect(url.origin + url.pathname).toBe("https://www.googleapis.com/youtube/v3/videos");
+    expect(url.searchParams.get("part")).toBe("snippet");
+    expect(url.searchParams.get("id")).toBe("abc123");
+
+    expect(
+      normalizeYouTubeVideoMetadata({
+        snippet: {
+          title: "A video title",
+          description: "A description",
+          channelTitle: "A channel",
+          publishedAt: "2026-06-13T00:00:00Z",
+          thumbnails: {
+            maxres: { url: "https://example.com/max.jpg" }
+          }
+        }
+      })
+    ).toEqual({
+      title: "A video title",
+      description: "A description",
+      channelTitle: "A channel",
+      publishedAt: "2026-06-13T00:00:00Z",
+      thumbnailUrl: "https://example.com/max.jpg"
+    });
   });
 });

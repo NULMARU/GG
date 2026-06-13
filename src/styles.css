@@ -522,6 +522,18 @@ input[type="range"] {
   gap: 12px;
 }
 
+.source-analyzer {
+  display: grid;
+  gap: 8px;
+}
+
+.metadata-message {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
 .google-search-block {
   display: grid;
   gap: 10px;
