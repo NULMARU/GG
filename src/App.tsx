@@ -34,7 +34,7 @@ import {
   selectQuickStartTrack
 } from "./lib/playback";
 import { recommendTracks } from "./lib/recommendations";
-import { analyzeSourceUrl, extractYouTubeId, withAutoplay } from "./lib/source";
+import { analyzeSourceUrl, withAutoplay } from "./lib/source";
 import { analyzeSourceMetadata, applySourceMetadataPatch } from "./lib/sourceMetadata";
 import {
   exportLibraryJson,
@@ -56,7 +56,6 @@ import {
   searchYouTubeMusic,
   type YouTubeSearchItem
 } from "./lib/youtubeData";
-import { loadYouTubeIframeApi, YT_ENDED, type YouTubePlayerInstance } from "./lib/youtubePlayer";
 import type {
   AppPreferences,
   AppView,
@@ -341,9 +340,6 @@ function App() {
   const [autoplayArmed, setAutoplayArmed] = useState(false);
   const [settingsMessage, setSettingsMessage] = useState("");
   const [now, setNow] = useState(() => new Date());
-  const [playerHostReady, setPlayerHostReady] = useState(false);
-  const suppressHistoryRef = useRef(false);
-  const ytPlayerRef = useRef<YouTubePlayerInstance | null>(null);
   const continuousPlayRef = useRef(continuousPlay);
   const handleEndedRef = useRef<() => void>(() => undefined);
 
@@ -432,11 +428,6 @@ function App() {
     }
 
     const onPopState = (event: PopStateEvent) => {
-      if (suppressHistoryRef.current) {
-        suppressHistoryRef.current = false;
-        return;
-      }
-
       setIsAddModalOpen(false);
       setIsSettingsOpen(false);
 
@@ -527,72 +518,41 @@ function App() {
     }
   }, [autoplayArmed, now]); // intentionally not depending on selectedId to avoid loops
 
-  // YouTube player for end-of-track continuous play
+  // YouTube embed posts state changes when enablejsapi=1 (no IFrame API DOM takeover).
   useEffect(() => {
-    if (!playerHostReady || !selectedTrack) return;
+    function onMessage(event: MessageEvent) {
+      if (typeof event.origin !== "string" || !event.origin.includes("youtube.com")) {
+        return;
+      }
 
-    const videoId = extractYouTubeId(selectedTrack.sourceUrl);
-    if (!videoId) {
-      ytPlayerRef.current?.destroy();
-      ytPlayerRef.current = null;
-      return;
+      let data: unknown = event.data;
+      if (typeof data === "string") {
+        try {
+          data = JSON.parse(data);
+        } catch {
+          return;
+        }
+      }
+
+      if (!data || typeof data !== "object") return;
+      const payload = data as { event?: string; info?: number | { playerState?: number } };
+      if (payload.event !== "onStateChange") return;
+
+      const state =
+        typeof payload.info === "number"
+          ? payload.info
+          : typeof payload.info === "object"
+            ? payload.info?.playerState
+            : undefined;
+
+      // 0 = ENDED
+      if (state === 0) {
+        handleEndedRef.current();
+      }
     }
 
-    let cancelled = false;
-
-    loadYouTubeIframeApi()
-      .then(() => {
-        if (cancelled || !window.YT?.Player) return;
-
-        if (ytPlayerRef.current) {
-          try {
-            if (autoplayArmed) {
-              ytPlayerRef.current.loadVideoById(videoId);
-            } else {
-              ytPlayerRef.current.cueVideoById(videoId);
-            }
-            return;
-          } catch {
-            ytPlayerRef.current?.destroy();
-            ytPlayerRef.current = null;
-          }
-        }
-
-        const host = document.getElementById("yt-player-host");
-        if (!host) return;
-
-        host.innerHTML = "";
-        ytPlayerRef.current = new window.YT.Player("yt-player-host", {
-          videoId,
-          playerVars: {
-            rel: 0,
-            playsinline: 1,
-            origin: window.location.origin,
-            autoplay: autoplayArmed ? 1 : 0
-          },
-          events: {
-            onStateChange: (event) => {
-              if (event.data === (window.YT?.PlayerState.ENDED ?? YT_ENDED)) {
-                handleEndedRef.current();
-              }
-            }
-          }
-        });
-      })
-      .catch(() => {
-        // Fallback to plain iframe is handled in UI when player fails.
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [autoplayArmed, playerHostReady, selectedTrack?.id, selectedTrack?.sourceUrl]);
-
-  useEffect(() => {
-    return () => {
-      ytPlayerRef.current?.destroy();
-      ytPlayerRef.current = null;
-    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
   }, []);
 
   function returnToList() {
@@ -900,7 +860,6 @@ function App() {
           onNext={() => playAdjacent("next")}
           onToggleContinuous={() => setContinuousPlay((value) => !value)}
           onToggleShuffle={() => setShuffle((value) => !value)}
-          onPlayerHostReady={setPlayerHostReady}
           onAudioEnded={() => handleEndedRef.current()}
         />
       )}
@@ -1803,7 +1762,6 @@ interface DetailViewProps {
   onNext: () => void;
   onToggleContinuous: () => void;
   onToggleShuffle: () => void;
-  onPlayerHostReady: (ready: boolean) => void;
   onAudioEnded: () => void;
 }
 
@@ -1821,12 +1779,10 @@ function DetailView({
   onNext,
   onToggleContinuous,
   onToggleShuffle,
-  onPlayerHostReady,
   onAudioEnded
 }: DetailViewProps) {
   const source = analyzeSourceUrl(track.sourceUrl);
-  const youtubeId = extractYouTubeId(track.sourceUrl);
-  const [useNativeIframe, setUseNativeIframe] = useState(!youtubeId);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
   const iframeSrc = source.embedUrl
     ? withAutoplay(
         source.embedUrl,
@@ -1836,22 +1792,24 @@ function DetailView({
     : undefined;
   const artUrl = track.imageUrl || source.thumbnailUrl;
 
+  // Tell the embed we want state events (needed for continuous play end detection).
   useEffect(() => {
-    setUseNativeIframe(!youtubeId);
-    onPlayerHostReady(Boolean(youtubeId));
-    return () => onPlayerHostReady(false);
-  }, [onPlayerHostReady, track.id, youtubeId]);
+    if (!iframeSrc || !iframeRef.current) return;
 
-  useEffect(() => {
-    if (!youtubeId) return;
-    const timer = window.setTimeout(() => {
-      const host = document.getElementById("yt-player-host");
-      if (host && host.childElementCount === 0) {
-        setUseNativeIframe(true);
+    const frame = iframeRef.current;
+    const timer = window.setInterval(() => {
+      try {
+        frame.contentWindow?.postMessage(
+          JSON.stringify({ event: "listening", id: track.id }),
+          "*"
+        );
+      } catch {
+        // Cross-origin guard; ignore.
       }
-    }, 2500);
-    return () => window.clearTimeout(timer);
-  }, [track.id, youtubeId]);
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [iframeSrc, track.id]);
 
   return (
     <div className="detail-layout">
@@ -1883,10 +1841,10 @@ function DetailView({
         </div>
 
         <div className="player-frame">
-          {youtubeId && !useNativeIframe ? (
-            <div id="yt-player-host" className="yt-host" />
-          ) : iframeSrc ? (
+          {iframeSrc ? (
             <iframe
+              key={track.id}
+              ref={iframeRef}
               title={`${track.title} player`}
               src={iframeSrc}
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
@@ -1899,6 +1857,7 @@ function DetailView({
                 {artUrl ? <img src={artUrl} alt="" /> : <Music2 size={56} />}
               </div>
               <audio
+                key={track.id}
                 controls
                 autoPlay={autoplayArmed}
                 src={source.audioUrl}
