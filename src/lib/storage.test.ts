@@ -1,8 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Track } from "../types";
-import { loadUserTracks, saveUserTracks } from "./storage";
+import {
+  exportLibraryJson,
+  loadPreferences,
+  loadUserTracks,
+  parseLibraryBackup,
+  savePreferences,
+  saveUserTracks
+} from "./storage";
 
 const storageKey = "healing-music-playlist:v1";
+const prefsKey = "healing-music-playlist:prefs:v1";
 
 function createMemoryStorage() {
   const values = new Map<string, string>();
@@ -63,5 +71,47 @@ describe("storage", () => {
     expect(stored[0].verification.signals.map((signal) => signal.label)).toEqual([
       "개인 보관"
     ]);
+  });
+
+  it("loads and saves preferences with defaults", () => {
+    const localStorage = createMemoryStorage();
+    vi.stubGlobal("window", { localStorage });
+
+    expect(loadPreferences()).toMatchObject({
+      continuousPlay: true,
+      shuffle: false,
+      libraryFilter: "all"
+    });
+
+    savePreferences({
+      continuousPlay: false,
+      shuffle: true,
+      libraryFilter: "liked",
+      selectedMood: "focus",
+      searchQuery: "piano",
+      lastTrackId: "abc",
+      lastView: "detail"
+    });
+
+    expect(JSON.parse(localStorage.getItem(prefsKey) ?? "{}")).toMatchObject({
+      continuousPlay: false,
+      shuffle: true,
+      libraryFilter: "liked",
+      lastTrackId: "abc"
+    });
+  });
+
+  it("exports and parses library backups", () => {
+    const json = exportLibraryJson([createTrack()], {
+      continuousPlay: true,
+      shuffle: false,
+      libraryFilter: "mine",
+      selectedMood: "all",
+      searchQuery: ""
+    });
+    const backup = parseLibraryBackup(json);
+    expect(backup.version).toBe(1);
+    expect(backup.tracks).toHaveLength(1);
+    expect(backup.preferences.libraryFilter).toBe("mine");
   });
 });

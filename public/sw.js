@@ -1,4 +1,4 @@
-const CACHE_NAME = "healing-music-library-v1";
+const CACHE_NAME = "healing-music-library-v2";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

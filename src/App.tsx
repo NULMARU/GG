@@ -8,34 +8,70 @@ import {
   Link as LinkIcon,
   ListMusic,
   Music2,
+  Pause,
+  Play,
   Plus,
+  Repeat,
   Search,
+  Settings2,
+  Shuffle,
+  SkipBack,
+  SkipForward,
   Sparkles,
   Trash2,
+  Upload,
   X
 } from "lucide-react";
 import type { CSSProperties, FormEvent } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { moodOptions, seedTracks } from "./data/seedTracks";
 import { findCuratedMatches } from "./lib/discovery";
+import {
+  filterLibrary,
+  greetingForSegment,
+  recordPlay,
+  selectAdjacentTrack,
+  selectQuickStartTrack
+} from "./lib/playback";
 import { recommendTracks } from "./lib/recommendations";
-import { analyzeSourceUrl, withAutoplay } from "./lib/source";
+import { analyzeSourceUrl, extractYouTubeId, withAutoplay } from "./lib/source";
 import { analyzeSourceMetadata, applySourceMetadataPatch } from "./lib/sourceMetadata";
-import { loadUserTracks, saveUserTracks } from "./lib/storage";
-import { getTimeSegment, selectTrackForTime, timeSegmentLabels } from "./lib/timeSegments";
+import {
+  exportLibraryJson,
+  loadPreferences,
+  loadUserTracks,
+  parseLibraryBackup,
+  savePreferences,
+  saveUserTracks
+} from "./lib/storage";
+import {
+  getTimeSegment,
+  selectTrackForTime,
+  timeSegmentHints,
+  timeSegmentLabels
+} from "./lib/timeSegments";
 import { getThemeForTrack, themeToCssVars, themeProfiles } from "./lib/themeEngine";
 import {
   isYouTubeDataConfigured,
   searchYouTubeMusic,
   type YouTubeSearchItem
 } from "./lib/youtubeData";
-import type { Mood, ThemeProfile, TimeSegment, Track, TrackDraft } from "./types";
+import { loadYouTubeIframeApi, YT_ENDED, type YouTubePlayerInstance } from "./lib/youtubePlayer";
+import type {
+  AppPreferences,
+  AppView,
+  LibraryFilter,
+  Mood,
+  ThemeProfile,
+  TimeSegment,
+  Track,
+  TrackDraft
+} from "./types";
 
 const timeSegments: TimeSegment[] = ["morning", "midday", "evening", "night"];
 const historyAppMarker = "healing-music-playlist";
 type AddMode = "link" | "find";
 type SourceInputKind = "youtube" | "generated" | "audio" | "web";
-type AppView = "list" | "detail";
 
 interface AppHistoryState {
   app: typeof historyAppMarker;
@@ -73,6 +109,14 @@ const sourceInputOptions: Array<{
     detail: "웹 소스 보관",
     placeholder: "https://..."
   }
+];
+
+const libraryFilterOptions: Array<{ value: LibraryFilter; label: string }> = [
+  { value: "all", label: "전체" },
+  { value: "now", label: "지금" },
+  { value: "liked", label: "좋아요" },
+  { value: "mine", label: "내 곡" },
+  { value: "recent", label: "최근" }
 ];
 
 interface BeforeInstallPromptEvent extends Event {
@@ -237,13 +281,51 @@ function getTrackTheme(track: Track): ThemeProfile {
   return themeProfiles[track.moods[0]] ?? themeProfiles.serene;
 }
 
+function mergePlayableCatalog(userTracks: Track[]): Track[] {
+  const userIds = new Set(userTracks.map((track) => track.id));
+  return [...userTracks, ...seedTracks.filter((track) => !userIds.has(track.id))];
+}
+
+function touchTrackInCatalog(
+  userTracks: Track[],
+  track: Track,
+  patch: Partial<Track>
+): { userTracks: Track[]; nextTrack: Track } {
+  const nextTrack = { ...track, ...patch };
+
+  if (track.userAdded || userTracks.some((item) => item.id === track.id)) {
+    return {
+      userTracks: userTracks.map((item) => (item.id === track.id ? nextTrack : item)),
+      nextTrack
+    };
+  }
+
+  return {
+    userTracks: [{ ...nextTrack, userAdded: true, addedAt: nextTrack.addedAt ?? new Date().toISOString() }, ...userTracks],
+    nextTrack: { ...nextTrack, userAdded: true, addedAt: nextTrack.addedAt ?? new Date().toISOString() }
+  };
+}
+
 function App() {
+  const initialPrefs = useMemo(() => loadPreferences(), []);
   const [userTracks, setUserTracks] = useState<Track[]>(() => loadUserTracks());
-  const [selectedId, setSelectedId] = useState(seedTracks[0].id);
-  const [view, setView] = useState<AppView>("list");
-  const [selectedMood, setSelectedMood] = useState<Mood | "all">("all");
+  const [selectedId, setSelectedId] = useState(() => {
+    const tracks = mergePlayableCatalog(loadUserTracks());
+    return initialPrefs.lastTrackId && tracks.some((track) => track.id === initialPrefs.lastTrackId)
+      ? initialPrefs.lastTrackId
+      : tracks[0]?.id ?? seedTracks[0].id;
+  });
+  const [view, setView] = useState<AppView>(() =>
+    initialPrefs.lastView === "detail" && initialPrefs.lastTrackId ? "detail" : "list"
+  );
+  const [selectedMood, setSelectedMood] = useState<Mood | "all">(initialPrefs.selectedMood);
+  const [libraryFilter, setLibraryFilter] = useState<LibraryFilter>(initialPrefs.libraryFilter);
+  const [searchQuery, setSearchQuery] = useState(initialPrefs.searchQuery);
+  const [continuousPlay, setContinuousPlay] = useState(initialPrefs.continuousPlay);
+  const [shuffle, setShuffle] = useState(initialPrefs.shuffle);
   const [addMode, setAddMode] = useState<AddMode>("link");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [draft, setDraft] = useState<TrackDraft>(defaultDraft);
   const [findQuery, setFindQuery] = useState("");
   const [youtubeResults, setYoutubeResults] = useState<YouTubeSearchItem[]>([]);
@@ -257,18 +339,35 @@ function App() {
   const [metadataMessage, setMetadataMessage] = useState("");
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [autoplayArmed, setAutoplayArmed] = useState(false);
+  const [settingsMessage, setSettingsMessage] = useState("");
   const [now, setNow] = useState(() => new Date());
+  const [playerHostReady, setPlayerHostReady] = useState(false);
+  const suppressHistoryRef = useRef(false);
+  const ytPlayerRef = useRef<YouTubePlayerInstance | null>(null);
+  const continuousPlayRef = useRef(continuousPlay);
+  const handleEndedRef = useRef<() => void>(() => undefined);
 
-  const tracks = useMemo(() => [...userTracks, ...seedTracks], [userTracks]);
+  const tracks = useMemo(() => mergePlayableCatalog(userTracks), [userTracks]);
   const selectedTrack = tracks.find((track) => track.id === selectedId) ?? tracks[0];
   const activeTheme = getThemeForTrack(selectedTrack);
   const currentSegment = getTimeSegment(now);
   const youtubeConfigured = isYouTubeDataConfigured();
 
-  const visibleTracks = useMemo(() => {
-    if (selectedMood === "all") return tracks;
-    return tracks.filter((track) => track.moods.includes(selectedMood));
-  }, [selectedMood, tracks]);
+  const visibleTracks = useMemo(
+    () =>
+      filterLibrary(tracks, {
+        query: searchQuery,
+        mood: selectedMood,
+        filter: libraryFilter,
+        now
+      }),
+    [libraryFilter, now, searchQuery, selectedMood, tracks]
+  );
+
+  const playQueue = useMemo(() => {
+    const queue = visibleTracks.length > 0 ? visibleTracks : tracks;
+    return queue.filter((track) => track.sourceUrl.trim().length > 0);
+  }, [tracks, visibleTracks]);
 
   const recommendations = useMemo(
     () =>
@@ -276,9 +375,9 @@ function App() {
         currentMood: selectedTrack?.moods[0],
         currentSegment,
         limit: 6,
-        likedTrackIds: userTracks.filter((track) => track.liked).map((track) => track.id)
+        likedTrackIds: tracks.filter((track) => track.liked).map((track) => track.id)
       }),
-    [currentSegment, selectedTrack, tracks, userTracks]
+    [currentSegment, selectedTrack, tracks]
   );
 
   const curatedMatches = useMemo(
@@ -286,19 +385,60 @@ function App() {
     [findQuery]
   );
 
+  const quickTrack = useMemo(
+    () =>
+      selectQuickStartTrack(tracks, {
+        now,
+        preferLiked: true,
+        shuffle
+      }),
+    [now, shuffle, tracks]
+  );
+
+  const preferences: AppPreferences = useMemo(
+    () => ({
+      lastTrackId: selectedId,
+      lastView: view,
+      continuousPlay,
+      shuffle,
+      libraryFilter,
+      selectedMood,
+      searchQuery
+    }),
+    [continuousPlay, libraryFilter, searchQuery, selectedId, selectedMood, shuffle, view]
+  );
+
+  useEffect(() => {
+    continuousPlayRef.current = continuousPlay;
+  }, [continuousPlay]);
+
   useEffect(() => {
     saveUserTracks(userTracks);
   }, [userTracks]);
 
   useEffect(() => {
+    savePreferences(preferences);
+  }, [preferences]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
 
     if (!isAppHistoryState(window.history.state)) {
-      replaceListHistoryState();
+      if (view === "detail" && selectedId) {
+        pushDetailHistoryState(selectedId);
+      } else {
+        replaceListHistoryState();
+      }
     }
 
     const onPopState = (event: PopStateEvent) => {
+      if (suppressHistoryRef.current) {
+        suppressHistoryRef.current = false;
+        return;
+      }
+
       setIsAddModalOpen(false);
+      setIsSettingsOpen(false);
 
       if (isAppHistoryState(event.state) && event.state.view === "detail") {
         const trackExists = tracks.some((track) => track.id === event.state.selectedId);
@@ -315,7 +455,7 @@ function App() {
 
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, [tracks]);
+  }, [selectedId, tracks, view]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 60_000);
@@ -339,23 +479,125 @@ function App() {
     };
   }, []);
 
+  const openTrack = useCallback(
+    (track: Track, options: { autoplay?: boolean; record?: boolean } = {}) => {
+      const shouldRecord = options.record !== false;
+      if (shouldRecord) {
+        const played = recordPlay(track);
+        setUserTracks((current) => {
+          const result = touchTrackInCatalog(current, track, {
+            playCount: played.playCount,
+            lastPlayedAt: played.lastPlayedAt
+          });
+          return result.userTracks;
+        });
+      }
+
+      pushDetailHistoryState(track.id);
+      setSelectedId(track.id);
+      setView("detail");
+      if (options.autoplay) setAutoplayArmed(true);
+    },
+    []
+  );
+
+  const playAdjacent = useCallback(
+    (direction: "next" | "prev") => {
+      const next = selectAdjacentTrack(playQueue, selectedId, direction, { shuffle });
+      if (next) openTrack(next, { autoplay: true });
+    },
+    [openTrack, playQueue, selectedId, shuffle]
+  );
+
+  useEffect(() => {
+    handleEndedRef.current = () => {
+      if (!continuousPlayRef.current) return;
+      const next = selectAdjacentTrack(playQueue, selectedId, "next", { shuffle });
+      if (next && next.id !== selectedId) {
+        openTrack(next, { autoplay: true });
+      }
+    };
+  }, [openTrack, playQueue, selectedId, shuffle]);
+
   useEffect(() => {
     if (!autoplayArmed) return;
     const timedTrack = selectTrackForTime(tracks, now);
     if (timedTrack && (view !== "detail" || selectedId !== timedTrack.id)) {
-      openTrack(timedTrack);
+      openTrack(timedTrack, { autoplay: true, record: true });
     }
-  }, [autoplayArmed, now, selectedId, tracks, view]);
+  }, [autoplayArmed, now]); // intentionally not depending on selectedId to avoid loops
 
-  function openTrack(track: Track) {
-    pushDetailHistoryState(track.id);
-    setSelectedId(track.id);
-    setView("detail");
-  }
+  // YouTube player for end-of-track continuous play
+  useEffect(() => {
+    if (!playerHostReady || !selectedTrack) return;
+
+    const videoId = extractYouTubeId(selectedTrack.sourceUrl);
+    if (!videoId) {
+      ytPlayerRef.current?.destroy();
+      ytPlayerRef.current = null;
+      return;
+    }
+
+    let cancelled = false;
+
+    loadYouTubeIframeApi()
+      .then(() => {
+        if (cancelled || !window.YT?.Player) return;
+
+        if (ytPlayerRef.current) {
+          try {
+            if (autoplayArmed) {
+              ytPlayerRef.current.loadVideoById(videoId);
+            } else {
+              ytPlayerRef.current.cueVideoById(videoId);
+            }
+            return;
+          } catch {
+            ytPlayerRef.current?.destroy();
+            ytPlayerRef.current = null;
+          }
+        }
+
+        const host = document.getElementById("yt-player-host");
+        if (!host) return;
+
+        host.innerHTML = "";
+        ytPlayerRef.current = new window.YT.Player("yt-player-host", {
+          videoId,
+          playerVars: {
+            rel: 0,
+            playsinline: 1,
+            origin: window.location.origin,
+            autoplay: autoplayArmed ? 1 : 0
+          },
+          events: {
+            onStateChange: (event) => {
+              if (event.data === (window.YT?.PlayerState.ENDED ?? YT_ENDED)) {
+                handleEndedRef.current();
+              }
+            }
+          }
+        });
+      })
+      .catch(() => {
+        // Fallback to plain iframe is handled in UI when player fails.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [autoplayArmed, playerHostReady, selectedTrack?.id, selectedTrack?.sourceUrl]);
+
+  useEffect(() => {
+    return () => {
+      ytPlayerRef.current?.destroy();
+      ytPlayerRef.current = null;
+    };
+  }, []);
 
   function returnToList() {
     setIsAddModalOpen(false);
-    setAutoplayArmed(false);
+    setIsSettingsOpen(false);
 
     if (
       typeof window !== "undefined" &&
@@ -379,8 +621,19 @@ function App() {
     setAutoplayArmed(true);
     const timedTrack = selectTrackForTime(tracks, now);
     if (timedTrack) {
-      openTrack(timedTrack);
+      openTrack(timedTrack, { autoplay: true });
     }
+  }
+
+  function startQuickListen(mode: "now" | "shuffle") {
+    const track =
+      mode === "shuffle"
+        ? selectQuickStartTrack(tracks, { now, shuffle: true, preferLiked: true })
+        : quickTrack ?? selectTrackForTime(tracks, now);
+    if (!track) return;
+    if (mode === "shuffle") setShuffle(true);
+    setAutoplayArmed(true);
+    openTrack(track, { autoplay: true });
   }
 
   function handleAddLink(event: FormEvent<HTMLFormElement>) {
@@ -389,7 +642,7 @@ function App() {
     setUserTracks((current) => [track, ...current]);
     setDraft(defaultDraft);
     setIsAddModalOpen(false);
-    openTrack(track);
+    openTrack(track, { autoplay: true, record: false });
   }
 
   async function handleAnalyzeSource() {
@@ -426,7 +679,7 @@ function App() {
     setUserTracks((current) => [track, ...current]);
     setFindQuery("");
     setIsAddModalOpen(false);
-    openTrack(track);
+    openTrack(track, { record: false });
   }
 
   async function runYoutubeSearch() {
@@ -452,7 +705,7 @@ function App() {
     setYoutubeResults([]);
     setYoutubeStatus("idle");
     setIsAddModalOpen(false);
-    openTrack(track);
+    openTrack(track, { autoplay: true, record: false });
   }
 
   function addCuratedMatch(track: Track) {
@@ -460,7 +713,7 @@ function App() {
     setUserTracks((current) => [cloned, ...current]);
     setFindQuery("");
     setIsAddModalOpen(false);
-    openTrack(cloned);
+    openTrack(cloned, { autoplay: true, record: false });
   }
 
   function toggleMood(mood: Mood) {
@@ -484,25 +737,32 @@ function App() {
   }
 
   function toggleLike(track: Track) {
-    if (!track.userAdded) {
-      const likedClone = cloneCuratedTrack(track, "liked seed");
-      likedClone.liked = true;
-      setUserTracks((current) => [likedClone, ...current]);
-      setSelectedId(likedClone.id);
+    const existing = userTracks.find((item) => item.id === track.id);
+    if (existing) {
+      setUserTracks((current) =>
+        current.map((item) =>
+          item.id === track.id ? { ...item, liked: !item.liked } : item
+        )
+      );
       return;
     }
 
-    setUserTracks((current) =>
-      current.map((item) =>
-        item.id === track.id ? { ...item, liked: !item.liked } : item
-      )
-    );
+    // Seed track: keep same id so session/play queue stay stable.
+    const likedClone: Track = {
+      ...track,
+      liked: true,
+      userAdded: true,
+      catalogLane: "personal",
+      addedAt: new Date().toISOString()
+    };
+    setUserTracks((current) => [likedClone, ...current.filter((item) => item.id !== track.id)]);
   }
 
   function removeUserTrack(track: Track) {
     if (!track.userAdded) return;
     setUserTracks((current) => current.filter((item) => item.id !== track.id));
-    setSelectedId(seedTracks[0].id);
+    const remaining = mergePlayableCatalog(userTracks.filter((item) => item.id !== track.id));
+    setSelectedId(remaining[0]?.id ?? seedTracks[0].id);
     replaceListHistoryState();
     setView("list");
   }
@@ -514,7 +774,42 @@ function App() {
     setInstallPrompt(null);
   }
 
+  function exportLibrary() {
+    const json = exportLibraryJson(userTracks, preferences);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `healing-library-${new Date().toISOString().slice(0, 10)}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    setSettingsMessage("백업 파일을 내려받았습니다.");
+  }
+
+  async function importLibrary(file: File) {
+    try {
+      const text = await file.text();
+      const backup = parseLibraryBackup(text);
+      setUserTracks(backup.tracks);
+      setContinuousPlay(backup.preferences.continuousPlay);
+      setShuffle(backup.preferences.shuffle);
+      setLibraryFilter(backup.preferences.libraryFilter);
+      setSelectedMood(backup.preferences.selectedMood);
+      setSearchQuery(backup.preferences.searchQuery);
+      if (backup.preferences.lastTrackId) {
+        setSelectedId(backup.preferences.lastTrackId);
+      }
+      setSettingsMessage(`${backup.tracks.length}곡을 복원했습니다.`);
+    } catch (error) {
+      setSettingsMessage(
+        error instanceof Error ? error.message : "백업 파일을 읽지 못했습니다."
+      );
+    }
+  }
+
   const cssVars = themeToCssVars(activeTheme) as CSSProperties;
+  const likedCount = tracks.filter((track) => track.liked).length;
+  const mineCount = tracks.filter((track) => track.userAdded).length;
 
   return (
     <main className="app-shell" style={cssVars}>
@@ -537,11 +832,11 @@ function App() {
             onClick={() => setIsAddModalOpen(true)}
           >
             <Plus size={18} />
-            소스 추가
+            추가
           </button>
           <div className="time-pill">
             <Clock3 size={16} />
-            <span>현재 {timeSegmentLabels[currentSegment]}</span>
+            <span>{timeSegmentLabels[currentSegment]}</span>
           </div>
           <button
             className={autoplayArmed ? "autoplay-button active" : "autoplay-button"}
@@ -551,7 +846,15 @@ function App() {
             aria-pressed={autoplayArmed}
           >
             <Clock3 size={18} />
-            <span>{autoplayArmed ? "자동 선곡 끄기" : "자동 선곡"}</span>
+            <span className="button-label">{autoplayArmed ? "자동 중" : "자동"}</span>
+          </button>
+          <button
+            className="icon-button"
+            type="button"
+            onClick={() => setIsSettingsOpen(true)}
+            title="설정"
+          >
+            <Settings2 size={18} />
           </button>
           {installPrompt ? (
             <button className="install-button" type="button" onClick={installApp}>
@@ -567,21 +870,54 @@ function App() {
           tracks={visibleTracks}
           allTracks={tracks}
           selectedMood={selectedMood}
+          libraryFilter={libraryFilter}
+          searchQuery={searchQuery}
           recommendations={recommendations.combined}
+          currentSegment={currentSegment}
+          greeting={greetingForSegment(currentSegment)}
+          segmentHint={timeSegmentHints[currentSegment]}
+          quickTrack={quickTrack}
+          likedCount={likedCount}
+          mineCount={mineCount}
           onSelectMood={setSelectedMood}
-          onOpenTrack={openTrack}
+          onSelectFilter={setLibraryFilter}
+          onSearchQueryChange={setSearchQuery}
+          onOpenTrack={(track) => openTrack(track, { autoplay: true })}
+          onQuickStart={startQuickListen}
         />
       ) : (
         <DetailView
           track={selectedTrack}
           recommendations={recommendations.combined}
           autoplayArmed={autoplayArmed}
+          continuousPlay={continuousPlay}
+          shuffle={shuffle}
           onBack={returnToList}
-          onOpenTrack={openTrack}
+          onOpenTrack={(track) => openTrack(track, { autoplay: true })}
           onToggleLike={toggleLike}
           onRemoveTrack={removeUserTrack}
+          onPrev={() => playAdjacent("prev")}
+          onNext={() => playAdjacent("next")}
+          onToggleContinuous={() => setContinuousPlay((value) => !value)}
+          onToggleShuffle={() => setShuffle((value) => !value)}
+          onPlayerHostReady={setPlayerHostReady}
+          onAudioEnded={() => handleEndedRef.current()}
         />
       )}
+
+      {view === "list" && selectedTrack ? (
+        <MiniPlayer
+          track={selectedTrack}
+          continuousPlay={continuousPlay}
+          shuffle={shuffle}
+          onOpen={() => openTrack(selectedTrack, { record: false })}
+          onPrev={() => playAdjacent("prev")}
+          onNext={() => playAdjacent("next")}
+          onToggleLike={() => toggleLike(selectedTrack)}
+          onToggleContinuous={() => setContinuousPlay((value) => !value)}
+          onToggleShuffle={() => setShuffle((value) => !value)}
+        />
+      ) : null}
 
       <AddSourceDialog
         open={isAddModalOpen}
@@ -612,6 +948,23 @@ function App() {
         onRunYoutubeSearch={runYoutubeSearch}
         onAddYoutubeResult={addYoutubeResult}
       />
+
+      <SettingsDialog
+        open={isSettingsOpen}
+        continuousPlay={continuousPlay}
+        shuffle={shuffle}
+        message={settingsMessage}
+        trackCount={tracks.length}
+        userTrackCount={userTracks.length}
+        onClose={() => {
+          setIsSettingsOpen(false);
+          setSettingsMessage("");
+        }}
+        onToggleContinuous={() => setContinuousPlay((value) => !value)}
+        onToggleShuffle={() => setShuffle((value) => !value)}
+        onExport={exportLibrary}
+        onImport={importLibrary}
+      />
     </main>
   );
 }
@@ -620,43 +973,123 @@ interface ListViewProps {
   tracks: Track[];
   allTracks: Track[];
   selectedMood: Mood | "all";
+  libraryFilter: LibraryFilter;
+  searchQuery: string;
   recommendations: Track[];
+  currentSegment: TimeSegment;
+  greeting: string;
+  segmentHint: string;
+  quickTrack?: Track;
+  likedCount: number;
+  mineCount: number;
   onSelectMood: (mood: Mood | "all") => void;
+  onSelectFilter: (filter: LibraryFilter) => void;
+  onSearchQueryChange: (query: string) => void;
   onOpenTrack: (track: Track) => void;
+  onQuickStart: (mode: "now" | "shuffle") => void;
 }
 
 function ListView({
   tracks,
   allTracks,
   selectedMood,
+  libraryFilter,
+  searchQuery,
   recommendations,
+  currentSegment,
+  greeting,
+  segmentHint,
+  quickTrack,
+  likedCount,
+  mineCount,
   onSelectMood,
-  onOpenTrack
+  onSelectFilter,
+  onSearchQueryChange,
+  onOpenTrack,
+  onQuickStart
 }: ListViewProps) {
-  const personalCount = recommendations.filter((track) => track.catalogLane === "personal").length;
-  const trendCount = recommendations.filter((track) => track.catalogLane === "trend").length;
-
   return (
-    <div className="page-grid">
+    <div className="page-grid has-mini-player">
       <section className="library-panel">
-        <div className="section-header">
+        <div className="hero-card">
           <div>
-            <p className="eyebrow">Local MVP</p>
-            <h1>나만의 힐링 플레이리스트</h1>
+            <p className="eyebrow">{greeting} · {timeSegmentLabels[currentSegment]}</p>
+            <h1>지금 바로 듣기</h1>
+            <p className="hero-copy">{segmentHint}</p>
+            {quickTrack ? (
+              <p className="hero-track-preview">
+                추천: <strong>{quickTrack.title}</strong>
+                <span> · {quickTrack.artist}</span>
+              </p>
+            ) : null}
           </div>
-          <div className="stat-row">
-            <span>{allTracks.length} tracks</span>
-            <span>{personalCount}:{trendCount}</span>
+          <div className="hero-actions">
+            <button className="primary-button" type="button" onClick={() => onQuickStart("now")}>
+              <Play size={18} />
+              지금 재생
+            </button>
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={() => onQuickStart("shuffle")}
+            >
+              <Shuffle size={18} />
+              셔플
+            </button>
           </div>
         </div>
 
-        <div className="filter-row" aria-label="분위기 필터">
+        <div className="section-header">
+          <div>
+            <p className="eyebrow">Library</p>
+            <h2 className="section-title">내 플레이리스트</h2>
+          </div>
+          <div className="stat-row">
+            <span>{allTracks.length}곡</span>
+            <span>♥ {likedCount}</span>
+            <span>내 곡 {mineCount}</span>
+          </div>
+        </div>
+
+        <label className="search-field">
+          <Search size={16} />
+          <input
+            value={searchQuery}
+            onChange={(event) => onSearchQueryChange(event.currentTarget.value)}
+            placeholder="제목, 아티스트, 장르 검색"
+          />
+          {searchQuery ? (
+            <button
+              className="clear-search"
+              type="button"
+              onClick={() => onSearchQueryChange("")}
+              aria-label="검색 지우기"
+            >
+              <X size={14} />
+            </button>
+          ) : null}
+        </label>
+
+        <div className="filter-row" aria-label="라이브러리 필터">
+          {libraryFilterOptions.map((option) => (
+            <button
+              className={libraryFilter === option.value ? "chip selected" : "chip"}
+              key={option.value}
+              type="button"
+              onClick={() => onSelectFilter(option.value)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="filter-row mood-filter-row" aria-label="분위기 필터">
           <button
             className={selectedMood === "all" ? "chip selected" : "chip"}
             type="button"
             onClick={() => onSelectMood("all")}
           >
-            전체
+            전체 분위기
           </button>
           {moodOptions.map((option) => (
             <button
@@ -670,19 +1103,26 @@ function ListView({
           ))}
         </div>
 
-        <div className="track-grid">
-          {tracks.map((track) => (
-            <TrackCard key={track.id} track={track} onOpenTrack={onOpenTrack} />
-          ))}
-        </div>
+        {tracks.length === 0 ? (
+          <div className="empty-library">
+            <Music2 size={28} />
+            <p>조건에 맞는 곡이 없습니다. 필터를 바꾸거나 소스를 추가해 보세요.</p>
+          </div>
+        ) : (
+          <div className="track-grid">
+            {tracks.map((track) => (
+              <TrackCard key={track.id} track={track} onOpenTrack={onOpenTrack} />
+            ))}
+          </div>
+        )}
       </section>
 
       <aside className="side-panel">
         <section className="recommendation-panel">
           <div className="section-header compact">
             <div>
-              <p className="eyebrow">50:50</p>
-              <h2>추천</h2>
+              <p className="eyebrow">For you</p>
+              <h2>지금 추천</h2>
             </div>
             <Sparkles size={20} />
           </div>
@@ -697,13 +1137,215 @@ function ListView({
                 <span className={`lane-dot ${track.catalogLane}`} />
                 <span>
                   <strong>{track.title}</strong>
-                  <small>{track.artist}</small>
+                  <small>
+                    {track.artist}
+                    {track.liked ? " · ♥" : ""}
+                  </small>
                 </span>
               </button>
             ))}
           </div>
         </section>
       </aside>
+    </div>
+  );
+}
+
+interface MiniPlayerProps {
+  track: Track;
+  continuousPlay: boolean;
+  shuffle: boolean;
+  onOpen: () => void;
+  onPrev: () => void;
+  onNext: () => void;
+  onToggleLike: () => void;
+  onToggleContinuous: () => void;
+  onToggleShuffle: () => void;
+}
+
+function MiniPlayer({
+  track,
+  continuousPlay,
+  shuffle,
+  onOpen,
+  onPrev,
+  onNext,
+  onToggleLike,
+  onToggleContinuous,
+  onToggleShuffle
+}: MiniPlayerProps) {
+  const source = analyzeSourceUrl(track.sourceUrl);
+  const artUrl = track.imageUrl || source.thumbnailUrl;
+
+  return (
+    <div className="mini-player">
+      <button className="mini-player-main" type="button" onClick={onOpen}>
+        <div className="mini-art" aria-hidden="true">
+          {artUrl ? <img src={artUrl} alt="" /> : <Music2 size={18} />}
+        </div>
+        <span>
+          <strong>{track.title}</strong>
+          <small>{track.artist}</small>
+        </span>
+      </button>
+      <div className="mini-player-actions">
+        <button
+          className={shuffle ? "icon-button active" : "icon-button"}
+          type="button"
+          onClick={onToggleShuffle}
+          title="셔플"
+          aria-pressed={shuffle}
+        >
+          <Shuffle size={16} />
+        </button>
+        <button className="icon-button" type="button" onClick={onPrev} title="이전">
+          <SkipBack size={16} />
+        </button>
+        <button className="icon-button primary-mini" type="button" onClick={onOpen} title="재생 화면">
+          <Play size={16} />
+        </button>
+        <button className="icon-button" type="button" onClick={onNext} title="다음">
+          <SkipForward size={16} />
+        </button>
+        <button
+          className={continuousPlay ? "icon-button active" : "icon-button"}
+          type="button"
+          onClick={onToggleContinuous}
+          title="연속 재생"
+          aria-pressed={continuousPlay}
+        >
+          <Repeat size={16} />
+        </button>
+        <button
+          className={track.liked ? "icon-button active" : "icon-button"}
+          type="button"
+          onClick={onToggleLike}
+          title="좋아요"
+          aria-pressed={Boolean(track.liked)}
+        >
+          <Heart size={16} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+interface SettingsDialogProps {
+  open: boolean;
+  continuousPlay: boolean;
+  shuffle: boolean;
+  message: string;
+  trackCount: number;
+  userTrackCount: number;
+  onClose: () => void;
+  onToggleContinuous: () => void;
+  onToggleShuffle: () => void;
+  onExport: () => void;
+  onImport: (file: File) => void;
+}
+
+function SettingsDialog({
+  open,
+  continuousPlay,
+  shuffle,
+  message,
+  trackCount,
+  userTrackCount,
+  onClose,
+  onToggleContinuous,
+  onToggleShuffle,
+  onExport,
+  onImport
+}: SettingsDialogProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [onClose, open]);
+
+  if (!open) return null;
+
+  return (
+    <div
+      className="modal-backdrop"
+      onMouseDown={(event) => {
+        if (event.currentTarget === event.target) onClose();
+      }}
+    >
+      <section className="source-modal settings-modal" role="dialog" aria-modal="true">
+        <div className="modal-header">
+          <div>
+            <p className="eyebrow">Settings</p>
+            <h2>설정 & 백업</h2>
+          </div>
+          <button className="icon-button" type="button" onClick={onClose} title="닫기">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="settings-block">
+          <p className="settings-summary">
+            전체 {trackCount}곡 · 직접 추가 {userTrackCount}곡
+          </p>
+          <button
+            className={continuousPlay ? "settings-toggle active" : "settings-toggle"}
+            type="button"
+            onClick={onToggleContinuous}
+          >
+            <Repeat size={18} />
+            <span>
+              <strong>연속 재생</strong>
+              <small>곡이 끝나면 다음 곡으로</small>
+            </span>
+          </button>
+          <button
+            className={shuffle ? "settings-toggle active" : "settings-toggle"}
+            type="button"
+            onClick={onToggleShuffle}
+          >
+            <Shuffle size={18} />
+            <span>
+              <strong>셔플</strong>
+              <small>다음 곡을 무작위로</small>
+            </span>
+          </button>
+        </div>
+
+        <div className="settings-block">
+          <button className="secondary-button" type="button" onClick={onExport}>
+            <Download size={18} />
+            라이브러리 내보내기
+          </button>
+          <button
+            className="secondary-button"
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <Upload size={18} />
+            백업 가져오기
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/json,.json"
+            hidden
+            onChange={(event) => {
+              const file = event.currentTarget.files?.[0];
+              if (file) onImport(file);
+              event.currentTarget.value = "";
+            }}
+          />
+          {message ? <p className="metadata-message">{message}</p> : null}
+          <p className="settings-hint">
+            데이터는 이 기기 브라우저에만 저장됩니다. 기기 변경 전에는 백업을 받아 두세요.
+          </p>
+        </div>
+      </section>
     </div>
   );
 }
@@ -760,6 +1402,7 @@ function AddSourceDialog({
   onAddYoutubeResult
 }: AddSourceDialogProps) {
   const [sourceInputKind, setSourceInputKind] = useState<SourceInputKind>("youtube");
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const activeSourceOption =
     sourceInputOptions.find((option) => option.value === sourceInputKind) ??
     sourceInputOptions[0];
@@ -800,8 +1443,8 @@ function AddSourceDialog({
       >
         <div className="modal-header">
           <div>
-            <p className="eyebrow">Add Source</p>
-            <h2 id="add-source-title">음악 소스 추가</h2>
+            <p className="eyebrow">Add</p>
+            <h2 id="add-source-title">음악 추가</h2>
           </div>
           <button className="icon-button" type="button" onClick={onClose} title="닫기">
             <X size={18} />
@@ -815,7 +1458,7 @@ function AddSourceDialog({
             onClick={() => onSetAddMode("link")}
           >
             <LinkIcon size={16} />
-            직접 링크
+            링크
           </button>
           <button
             className={addMode === "find" ? "selected" : ""}
@@ -830,7 +1473,7 @@ function AddSourceDialog({
         {addMode === "link" ? (
           <form className="add-form" onSubmit={onAddLink}>
             <fieldset>
-              <legend>소스 메뉴</legend>
+              <legend>소스 종류</legend>
               <div className="source-input-menu">
                 {sourceInputOptions.map((option) => (
                   <button
@@ -870,7 +1513,7 @@ function AddSourceDialog({
                 disabled={draft.sourceUrl.trim().length === 0 || metadataStatus === "loading"}
               >
                 <Sparkles size={18} />
-                {metadataStatus === "loading" ? "분석 중" : "소스 분석"}
+                {metadataStatus === "loading" ? "분석 중" : "자동 채우기"}
               </button>
               {metadataMessage ? (
                 <p className={metadataStatus === "error" ? "api-message" : "metadata-message"}>
@@ -887,7 +1530,7 @@ function AddSourceDialog({
                   onChange={(event) =>
                     onDraftChange({ ...draft, title: event.currentTarget.value })
                   }
-                  placeholder="Clair de Lune"
+                  placeholder="자동 채우기 또는 직접 입력"
                 />
               </label>
               <label>
@@ -897,33 +1540,10 @@ function AddSourceDialog({
                   onChange={(event) =>
                     onDraftChange({ ...draft, artist: event.currentTarget.value })
                   }
-                  placeholder="Claude Debussy"
+                  placeholder="선택"
                 />
               </label>
             </div>
-
-            <label>
-              장르
-              <input
-                value={draft.genre}
-                onChange={(event) =>
-                  onDraftChange({ ...draft, genre: event.currentTarget.value })
-                }
-                placeholder="Ambient"
-              />
-            </label>
-
-            <label>
-              가사 직접 입력
-              <textarea
-                value={draft.lyrics ?? ""}
-                onChange={(event) =>
-                  onDraftChange({ ...draft, lyrics: event.currentTarget.value })
-                }
-                placeholder="가사가 필요한 곡만 직접 붙여 넣어 주세요."
-                rows={5}
-              />
-            </label>
 
             <fieldset>
               <legend>분위기</legend>
@@ -941,64 +1561,99 @@ function AddSourceDialog({
               </div>
             </fieldset>
 
-            <fieldset>
-              <legend>시간대</legend>
-              <div className="chip-grid">
-                {timeSegments.map((segment) => (
-                  <button
-                    className={draft.timeFit.includes(segment) ? "chip selected" : "chip"}
-                    key={segment}
-                    type="button"
-                    onClick={() => onToggleTimeFit(segment)}
-                  >
-                    {timeSegmentLabels[segment]}
-                  </button>
-                ))}
-              </div>
-            </fieldset>
+            <button
+              className="text-toggle"
+              type="button"
+              onClick={() => setShowAdvanced((value) => !value)}
+            >
+              {showAdvanced ? "간단히" : "세부 설정 (시간대·에너지·가사)"}
+            </button>
 
-            <div className="range-row">
-              <label>
-                에너지
-                <input
-                  min="1"
-                  max="10"
-                  type="range"
-                  value={draft.energy}
-                  onChange={(event) =>
-                    onDraftChange({
-                      ...draft,
-                      energy: Number(event.currentTarget.value)
-                    })
-                  }
-                />
-              </label>
-              <label>
-                밝기
-                <input
-                  min="1"
-                  max="10"
-                  type="range"
-                  value={draft.valence}
-                  onChange={(event) =>
-                    onDraftChange({
-                      ...draft,
-                      valence: Number(event.currentTarget.value)
-                    })
-                  }
-                />
-              </label>
-            </div>
+            {showAdvanced ? (
+              <>
+                <label>
+                  장르
+                  <input
+                    value={draft.genre}
+                    onChange={(event) =>
+                      onDraftChange({ ...draft, genre: event.currentTarget.value })
+                    }
+                    placeholder="Ambient"
+                  />
+                </label>
+
+                <label>
+                  가사 직접 입력
+                  <textarea
+                    value={draft.lyrics ?? ""}
+                    onChange={(event) =>
+                      onDraftChange({ ...draft, lyrics: event.currentTarget.value })
+                    }
+                    placeholder="필요한 곡만 붙여 넣기"
+                    rows={4}
+                  />
+                </label>
+
+                <fieldset>
+                  <legend>시간대</legend>
+                  <div className="chip-grid">
+                    {timeSegments.map((segment) => (
+                      <button
+                        className={draft.timeFit.includes(segment) ? "chip selected" : "chip"}
+                        key={segment}
+                        type="button"
+                        onClick={() => onToggleTimeFit(segment)}
+                      >
+                        {timeSegmentLabels[segment]}
+                      </button>
+                    ))}
+                  </div>
+                </fieldset>
+
+                <div className="range-row">
+                  <label>
+                    에너지
+                    <input
+                      min="1"
+                      max="10"
+                      type="range"
+                      value={draft.energy}
+                      onChange={(event) =>
+                        onDraftChange({
+                          ...draft,
+                          energy: Number(event.currentTarget.value)
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
+                    밝기
+                    <input
+                      min="1"
+                      max="10"
+                      type="range"
+                      value={draft.valence}
+                      onChange={(event) =>
+                        onDraftChange({
+                          ...draft,
+                          valence: Number(event.currentTarget.value)
+                        })
+                      }
+                    />
+                  </label>
+                </div>
+              </>
+            ) : null}
 
             <button className="primary-button" type="submit">
               <Plus size={18} />
-              추가
+              추가하고 재생
             </button>
           </form>
         ) : (
           <div className="find-panel">
             <label>
-              요청
+              어떤 음악을 찾고 있나요?
               <input
                 value={findQuery}
                 onChange={(event) => onFindQueryChange(event.currentTarget.value)}
@@ -1026,8 +1681,8 @@ function AddSourceDialog({
                 <span className={youtubeConfigured ? "status-dot ready" : "status-dot"} />
                 <span>
                   {youtubeConfigured
-                    ? "YouTube Data API 연결됨"
-                    : "YouTube Data API 키 필요"}
+                    ? "YouTube 검색 사용 가능"
+                    : "YouTube API 키 없으면 로컬 추천만"}
                 </span>
               </div>
               <button
@@ -1077,7 +1732,7 @@ function AddSourceDialog({
               disabled={findQuery.trim().length === 0}
             >
               <Search size={18} />
-              요청 저장
+              요청만 저장
             </button>
           </div>
         )}
@@ -1111,6 +1766,7 @@ function TrackCard({
             <Music2 size={28} />
           </div>
         )}
+        {track.liked ? <span className="liked-badge">♥</span> : null}
       </div>
       <div className="track-card-body">
         <div>
@@ -1119,7 +1775,9 @@ function TrackCard({
         </div>
         <div className="meta-line">
           <small>{track.genre}</small>
-          <small>{track.verification.score}</small>
+          <small>
+            {track.playCount ? `${track.playCount}회` : source.label}
+          </small>
         </div>
         <div className="mini-moods">
           {track.moods.slice(0, 3).map((mood) => (
@@ -1135,22 +1793,40 @@ interface DetailViewProps {
   track: Track;
   recommendations: Track[];
   autoplayArmed: boolean;
+  continuousPlay: boolean;
+  shuffle: boolean;
   onBack: () => void;
   onOpenTrack: (track: Track) => void;
   onToggleLike: (track: Track) => void;
   onRemoveTrack: (track: Track) => void;
+  onPrev: () => void;
+  onNext: () => void;
+  onToggleContinuous: () => void;
+  onToggleShuffle: () => void;
+  onPlayerHostReady: (ready: boolean) => void;
+  onAudioEnded: () => void;
 }
 
 function DetailView({
   track,
   recommendations,
   autoplayArmed,
+  continuousPlay,
+  shuffle,
   onBack,
   onOpenTrack,
   onToggleLike,
-  onRemoveTrack
+  onRemoveTrack,
+  onPrev,
+  onNext,
+  onToggleContinuous,
+  onToggleShuffle,
+  onPlayerHostReady,
+  onAudioEnded
 }: DetailViewProps) {
   const source = analyzeSourceUrl(track.sourceUrl);
+  const youtubeId = extractYouTubeId(track.sourceUrl);
+  const [useNativeIframe, setUseNativeIframe] = useState(!youtubeId);
   const iframeSrc = source.embedUrl
     ? withAutoplay(
         source.embedUrl,
@@ -1159,6 +1835,23 @@ function DetailView({
       )
     : undefined;
   const artUrl = track.imageUrl || source.thumbnailUrl;
+
+  useEffect(() => {
+    setUseNativeIframe(!youtubeId);
+    onPlayerHostReady(Boolean(youtubeId));
+    return () => onPlayerHostReady(false);
+  }, [onPlayerHostReady, track.id, youtubeId]);
+
+  useEffect(() => {
+    if (!youtubeId) return;
+    const timer = window.setTimeout(() => {
+      const host = document.getElementById("yt-player-host");
+      if (host && host.childElementCount === 0) {
+        setUseNativeIframe(true);
+      }
+    }, 2500);
+    return () => window.clearTimeout(timer);
+  }, [track.id, youtubeId]);
 
   return (
     <div className="detail-layout">
@@ -1190,7 +1883,9 @@ function DetailView({
         </div>
 
         <div className="player-frame">
-          {iframeSrc ? (
+          {youtubeId && !useNativeIframe ? (
+            <div id="yt-player-host" className="yt-host" />
+          ) : iframeSrc ? (
             <iframe
               title={`${track.title} player`}
               src={iframeSrc}
@@ -1203,18 +1898,54 @@ function DetailView({
               <div className="audio-art">
                 {artUrl ? <img src={artUrl} alt="" /> : <Music2 size={56} />}
               </div>
-              <audio controls src={source.audioUrl} />
+              <audio
+                controls
+                autoPlay={autoplayArmed}
+                src={source.audioUrl}
+                onEnded={onAudioEnded}
+              />
             </div>
           ) : (
             <div className="empty-player">
               <ListMusic size={44} />
               <span>
                 {source.sourceType === "music-generation"
-                  ? "생성앱 소스 저장됨"
-                  : "소스 대기"}
+                  ? "생성앱 소스 저장됨 · 외부에서 재생"
+                  : "재생 가능한 소스가 없습니다"}
               </span>
             </div>
           )}
+        </div>
+
+        <div className="transport-bar">
+          <button
+            className={shuffle ? "icon-button active" : "icon-button"}
+            type="button"
+            onClick={onToggleShuffle}
+            title="셔플"
+            aria-pressed={shuffle}
+          >
+            <Shuffle size={18} />
+          </button>
+          <button className="icon-button" type="button" onClick={onPrev} title="이전 곡">
+            <SkipBack size={18} />
+          </button>
+          <button className="transport-play" type="button" onClick={onNext} title="다음 곡">
+            <SkipForward size={20} />
+            다음
+          </button>
+          <button
+            className={continuousPlay ? "icon-button active" : "icon-button"}
+            type="button"
+            onClick={onToggleContinuous}
+            title="연속 재생"
+            aria-pressed={continuousPlay}
+          >
+            <Repeat size={18} />
+          </button>
+          <button className="icon-button" type="button" disabled title="재생 중">
+            {autoplayArmed ? <Pause size={18} /> : <Play size={18} />}
+          </button>
         </div>
 
         <div className="visualizer" aria-hidden="true">
@@ -1242,8 +1973,8 @@ function DetailView({
         <div className="detail-metadata">
           <span>{track.genre}</span>
           {track.year ? <span>{track.year}</span> : null}
-          <span>{track.catalogLane === "trend" ? "Trend" : "Personal"}</span>
-          <span>{source.sourceType}</span>
+          {track.playCount ? <span>{track.playCount}회 재생</span> : null}
+          {track.liked ? <span>좋아요</span> : null}
         </div>
 
         <div className="mood-row">
@@ -1252,39 +1983,23 @@ function DetailView({
           ))}
         </div>
 
-        <div className="verification-block">
-          <div className="score-ring">
-            <strong>{track.verification.score}</strong>
-            <span>score</span>
-          </div>
+        <div className="verification-block compact-note">
           <p>{track.verification.note}</p>
         </div>
 
-        <div className="signal-list">
-          {track.verification.signals.map((signal) => (
-            <div key={signal.label}>
-              <span>{signal.label}</span>
-              <meter min="0" max="40" value={signal.weight} />
-            </div>
-          ))}
-        </div>
-
-        <section className="lyrics-panel">
-          <h2>가사</h2>
-          {track.lyrics ? (
+        {track.lyrics ? (
+          <section className="lyrics-panel">
+            <h2>가사</h2>
             <pre className="lyrics-text">{track.lyrics}</pre>
-          ) : (
-            <p>직접 입력된 가사가 없습니다.</p>
-          )}
-        </section>
+          </section>
+        ) : null}
 
         {source.sourceType === "music-generation" ? (
           <section className="source-note">
             <h2>생성앱 소스</h2>
             <p>
-              {source.label} 링크를 개인 음악으로 저장했습니다. 해당 서비스가
-              외부 임베드를 막는 경우 앱 안에서는 링크 보관과 외부 열기를
-              제공합니다.
+              {source.label} 링크를 저장했습니다. 외부 임베드가 막혀 있으면 아래 소스 버튼으로
+              열어 주세요.
             </p>
           </section>
         ) : null}
@@ -1293,16 +2008,16 @@ function DetailView({
           {source.externalUrl ? (
             <a className="secondary-button" href={source.externalUrl} target="_blank" rel="noreferrer">
               <ExternalLink size={18} />
-              소스
+              소스 열기
             </a>
           ) : null}
         </div>
 
         <section className="next-list">
-          <h2>다음 추천</h2>
+          <h2>이어서 듣기</h2>
           {recommendations
             .filter((item) => item.id !== track.id)
-            .slice(0, 4)
+            .slice(0, 5)
             .map((item) => (
               <button
                 className="recommendation-item"

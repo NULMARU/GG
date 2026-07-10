@@ -25,6 +25,10 @@ export type Provider =
 
 export type CatalogLane = "personal" | "trend";
 
+export type LibraryFilter = "all" | "liked" | "mine" | "now" | "recent";
+
+export type AppView = "list" | "detail";
+
 export interface VerificationSignal {
   label: string;
   weight: number;
@@ -52,6 +56,7 @@ export interface Track {
   userAdded?: boolean;
   addedAt?: string;
   playCount?: number;
+  lastPlayedAt?: string;
   liked?: boolean;
   lyrics?: string;
 }
@@ -101,4 +106,21 @@ export interface TrackDraft {
   discoveryPrompt?: string;
   imageUrl?: string;
   lyrics?: string;
+}
+
+export interface AppPreferences {
+  lastTrackId?: string;
+  lastView?: AppView;
+  continuousPlay: boolean;
+  shuffle: boolean;
+  libraryFilter: LibraryFilter;
+  selectedMood: Mood | "all";
+  searchQuery: string;
+}
+
+export interface LibraryBackup {
+  version: 1;
+  exportedAt: string;
+  tracks: Track[];
+  preferences: AppPreferences;
 }

@@ -7,14 +7,32 @@ interface RecommendationOptions {
   likedTrackIds?: string[];
 }
 
+function recencyBoost(track: Track): number {
+  if (!track.lastPlayedAt) return 4;
+  const hours = (Date.now() - Date.parse(track.lastPlayedAt)) / (1000 * 60 * 60);
+  if (hours < 2) return -8;
+  if (hours < 24) return -2;
+  if (hours < 72) return 2;
+  return 6;
+}
+
 function scoreTrack(track: Track, options: RecommendationOptions): number {
   const moodScore =
     options.currentMood && track.moods.includes(options.currentMood) ? 26 : 0;
   const timeScore =
     options.currentSegment && track.timeFit.includes(options.currentSegment) ? 14 : 0;
-  const likedScore = options.likedTrackIds?.includes(track.id) ? 18 : 0;
+  const likedScore = options.likedTrackIds?.includes(track.id) || track.liked ? 18 : 0;
+  const playScore = Math.min(track.playCount ?? 0, 10) * 1.5;
   const healingFit = 20 - Math.abs(track.energy - 4) * 2 + track.valence;
-  return track.verification.score + moodScore + timeScore + likedScore + healingFit;
+  return (
+    track.verification.score +
+    moodScore +
+    timeScore +
+    likedScore +
+    playScore +
+    healingFit +
+    recencyBoost(track)
+  );
 }
 
 function ranked(tracks: Track[], options: RecommendationOptions): Track[] {

@@ -156,24 +156,113 @@ export const seedTracks: Track[] = [
     }
   },
   {
-    id: "richter-sleep-dream-variant",
-    title: "Sleep Sequence",
-    artist: "Local Curation Placeholder",
-    sourceUrl: "",
-    genre: "Sleep / Ambient",
+    id: "chopin-nocturne-op9-2",
+    title: "Nocturne Op. 9 No. 2",
+    artist: "Frédéric Chopin",
+    sourceUrl: "https://www.youtube.com/watch?v=9E6b3swbnWg",
+    genre: "Classical",
+    year: 1832,
     catalogLane: "personal",
-    moods: ["nocturne", "serene", "dreamy"],
-    energy: 1,
-    valence: 5,
-    timeFit: ["night"],
+    moods: ["nocturne", "warm", "melancholy"],
+    energy: 2,
+    valence: 6,
+    timeFit: ["evening", "night"],
     verification: {
-      score: 74,
+      score: 98,
       signals: [
-        { label: "manual curation slot", weight: 24 },
-        { label: "sleep mood fit", weight: 26 },
-        { label: "replaceable provider target", weight: 24 }
+        { label: "romantic piano canon", weight: 36 },
+        { label: "night listening classic", weight: 32 },
+        { label: "global recognition", weight: 30 }
       ],
-      note: "API 연결 전 야간 자동재생 흐름을 검증하기 위한 교체 가능 슬롯."
+      note: "밤의 감성을 대표하는 쇼팽 녹턴. 잠들기 전 재생에 잘 맞는다."
+    }
+  },
+  {
+    id: "einaudi-nuvole-bianche",
+    title: "Nuvole Bianche",
+    artist: "Ludovico Einaudi",
+    sourceUrl: "https://www.youtube.com/watch?v=kYA6GLA6BxU",
+    genre: "Modern Classical",
+    year: 2004,
+    catalogLane: "trend",
+    moods: ["cinematic", "serene", "melancholy"],
+    energy: 3,
+    valence: 6,
+    timeFit: ["morning", "evening"],
+    verification: {
+      score: 91,
+      signals: [
+        { label: "contemporary piano staple", weight: 32 },
+        { label: "broad listener recognition", weight: 30 },
+        { label: "emotional accessibility", weight: 29 }
+      ],
+      note: "반복되는 피아노 선율이 감정 정리를 돕는 현대 클래식 히트곡."
+    }
+  },
+  {
+    id: "aphex-twin-avril-14th",
+    title: "Avril 14th",
+    artist: "Aphex Twin",
+    sourceUrl: "https://www.youtube.com/watch?v=Xw5AiRVqfqk",
+    genre: "Ambient / Electronic",
+    year: 2001,
+    catalogLane: "personal",
+    moods: ["focus", "serene", "dreamy"],
+    energy: 2,
+    valence: 6,
+    timeFit: ["midday", "night"],
+    verification: {
+      score: 90,
+      signals: [
+        { label: "electronic piano classic", weight: 31 },
+        { label: "focus listening favorite", weight: 30 },
+        { label: "critical recognition", weight: 29 }
+      ],
+      note: "절제된 전자 피아노 톤으로 작업·집중 세션에 자주 쓰인다."
+    }
+  },
+  {
+    id: "yiruma-river-flows-in-you",
+    title: "River Flows in You",
+    artist: "Yiruma",
+    sourceUrl: "https://www.youtube.com/watch?v=7maJOI3QMu0",
+    genre: "Contemporary Piano",
+    year: 2001,
+    catalogLane: "trend",
+    moods: ["warm", "serene", "uplift"],
+    energy: 3,
+    valence: 8,
+    timeFit: ["morning", "evening"],
+    verification: {
+      score: 89,
+      signals: [
+        { label: "popular piano repertoire", weight: 30 },
+        { label: "warm emotional tone", weight: 30 },
+        { label: "listener familiarity", weight: 29 }
+      ],
+      note: "따뜻하고 익숙한 멜로디로 아침·저녁 전환에 부담이 적다."
+    }
+  },
+  {
+    id: "hans-zimmer-time",
+    title: "Time",
+    artist: "Hans Zimmer",
+    sourceUrl: "https://www.youtube.com/watch?v=RxabLA7UQ9k",
+    genre: "Film Score",
+    year: 2010,
+    catalogLane: "trend",
+    moods: ["cinematic", "uplift", "vital"],
+    energy: 5,
+    valence: 7,
+    timeFit: ["midday", "evening"],
+    verification: {
+      score: 93,
+      signals: [
+        { label: "film score landmark", weight: 34 },
+        { label: "emotional crescendo", weight: 31 },
+        { label: "global recognition", weight: 28 }
+      ],
+      note: "영화적 클라이맥스로 기운을 끌어올릴 때 적합한 곡."
     }
   }
 ];

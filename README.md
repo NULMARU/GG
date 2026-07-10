@@ -1,6 +1,9 @@
 # Healing Music Library
 
-개인용 힐링 뮤직 플레이리스트 로컬 MVP입니다. 목록, 상세 재생, 링크 추가, 로컬 탐색 요청, Google YouTube Data API 선택 적용, 50:50 추천, 시간대 자동 선곡, 분위기 기반 테마 변경을 검증할 수 있게 만들었습니다.
+개인용 힐링 뮤직 플레이리스트 앱입니다.  
+배포 주소: [https://nulmaru.github.io/GG/](https://nulmaru.github.io/GG/)
+
+열자마자 **지금 시간대 곡을 재생**하고, 목록을 검색·필터링하고, 곡이 끝나면 **다음 곡으로 이어 듣는** 흐름에 맞춰 구성되어 있습니다. 데이터는 브라우저 `localStorage`에 저장되며, 설정에서 JSON 백업/복원을 할 수 있습니다.
 
 ## 실행
 
@@ -13,87 +16,63 @@ npm run dev -- --port 5173
 
 ## GitHub Pages 배포
 
-`main` 브랜치에 push하면 `.github/workflows/deploy-pages.yml`이 `npm ci`, `npm run build`를 실행한 뒤 `gh-pages` 브랜치에 정적 산출물을 배포합니다. GitHub 저장소의 `Settings > Pages`에서 Source를 `Deploy from a branch`, Branch를 `gh-pages` / `/root`로 설정하면 스마트폰에서도 Pages URL로 접속할 수 있습니다.
+`main` 브랜치에 push하면 `.github/workflows/deploy-pages.yml`이 `npm ci`, `npm run build`를 실행한 뒤 `gh-pages` 브랜치에 정적 산출물을 배포합니다.
 
-YouTube 검색 기능까지 배포 사이트에서 쓰려면 저장소의 `Settings > Secrets and variables > Actions`에 아래 secret을 추가하세요.
+YouTube 검색까지 배포 사이트에서 쓰려면 저장소 Secrets에 아래를 넣으세요.
 
 ```bash
 VITE_YOUTUBE_DATA_API_KEY
 ```
 
-## 스마트폰 설치
+## 스마트폰 설치 (PWA)
 
-이 앱은 PWA로 구성되어 있어 Android Chrome/Samsung Internet에서 설치형 앱처럼 추가할 수 있습니다.
+1. `https://nulmaru.github.io/GG/` 를 엽니다.
+2. 브라우저 메뉴에서 **앱 설치** 또는 **홈 화면에 추가**를 선택합니다.
+3. 예전 바로가기가 있으면 삭제 후 다시 추가하면 새 아이콘/캐시가 적용됩니다.
 
-1. 스마트폰에서 `https://nulmaru.github.io/GG/`를 엽니다.
-2. 브라우저 메뉴에서 `앱 설치` 또는 `홈 화면에 추가`를 선택합니다.
-3. 예전에 만든 바로가기가 있다면 삭제한 뒤 다시 추가해야 새 manifest와 아이콘이 적용됩니다.
+## 주요 기능
 
-## 구현 범위
+### 바로 듣기
+- 홈 상단 **지금 재생** / **셔플**: 현재 시간대 + 좋아요 선호를 반영해 즉시 재생
+- **자동 선곡**: 시간대가 바뀌면 맞는 곡으로 이동
+- **연속 재생**: YouTube 곡 종료 시 다음 곡으로 (설정/미니플레이어에서 토글)
+- **이전/다음/셔플** 컨트롤
 
-- 전체 음악 목록에서 곡을 클릭하면 상세 재생 화면으로 이동
-- YouTube 링크는 일반 `youtube.com/embed` iframe과 origin/inline playback 파라미터로 앱 안에서 재생
-- Suno, Udio, Stable Audio 같은 음악생성앱 링크를 개인 창작 음악 소스로 저장
-- 직접 오디오 파일 URL(`mp3`, `wav`, `m4a`, `ogg`, `flac` 등)은 앱 안에서 `<audio>`로 재생
-- 사용자가 직접 링크와 기본 정보를 추가하면 `localStorage`에 저장
-- 링크 추가 화면에서 `소스 분석`을 누르면 YouTube oEmbed로 제목/채널명/썸네일을 먼저 자동 채움
-- oEmbed가 막힌 환경에서는 YouTube Data API가 설정된 경우에만 API로 한 번 더 시도
-- 오디오 파일과 음악생성앱 링크는 파일명/서비스 유형 기반으로 기본 정보를 추정
-- “찾아줘” 요청은 로컬 큐레이션 카탈로그에서 먼저 매칭하고, YouTube Data API가 설정되어 있으면 YouTube 음악 결과에서도 추가 가능
-- 상세 화면은 소스 분석, 썸네일, 제목/아티스트/장르/분위기/검증 점수/검증 신호를 표시
-- 가사는 API 연결 전 자리만 유지
-- 추천은 개인 레인 50%, 트렌드/큐레이션 레인 50% 비율을 유지
-- 선택 곡의 대표 분위기에 따라 색, 배경, 미터, 표면감이 변경
-- 시간대 자동 선곡은 사용자 클릭 후 활성화되며 현재 시간대에 맞는 곡으로 이동
-- 사용자 추가곡은 상세 화면에서 삭제 가능
+### 라이브러리
+- 검색 (제목·아티스트·장르)
+- 필터: 전체 / 지금 / 좋아요 / 내 곡 / 최근
+- 분위기 칩 필터
+- 목록 하단 **미니 플레이어**로 탐색 중에도 현재 곡 제어
+- 마지막 곡·필터·연속재생 설정 자동 복원
 
-## Google API 설정
+### 소스 추가
+- YouTube / Suno·Udio / 직접 오디오 URL / 기타 링크
+- **자동 채우기**로 제목·썸네일 추정
+- 세부 설정(시간대·에너지·가사)은 접어서 빠른 추가 가능
+- “찾아줘”로 로컬 큐레이션 매칭 + (선택) YouTube Data API 검색
 
-이 MVP에는 Google의 YouTube Data API v3를 적용했습니다. Google Custom Search JSON API는 공식 문서 기준으로 신규 고객에게 닫혀 있어 장기적으로 덜 적합하고, 이 앱의 “사용자가 찾아달라는 음악 추가”에는 YouTube 검색 결과와 임베드 URL을 바로 연결할 수 있는 YouTube Data API가 더 안전합니다. Suno/Udio 같은 음악생성앱에서 만든 곡은 직접 링크 저장으로 처리합니다.
+### 백업
+- 설정 → **라이브러리 내보내기 / 백업 가져오기**
+- 기기 변경 전 JSON 백업 권장
 
-`.env.example`을 참고해 `.env.local`을 만들고 값을 채우세요.
+## Google API 설정 (선택)
+
+`.env.example`을 참고해 `.env.local`을 만드세요.
 
 ```bash
 VITE_YOUTUBE_DATA_API_KEY=your_youtube_data_api_key
 ```
 
-설정 후 개발 서버를 다시 시작하면 “찾아줘” 탭의 `YouTube 검색` 버튼이 활성화됩니다. 개인 로컬 앱이어도 브라우저 번들에 키가 들어가므로 Google Cloud Console에서 HTTP referrer 제한을 걸어두는 것을 권장합니다.
+브라우저 번들에 키가 들어가므로 Google Cloud Console에서 HTTP referrer 제한을 권장합니다.
 
-## 루프 엔지니어링
-
-1. 계획 수립: 로컬 MVP와 향후 API provider 확장을 분리
-2. 화면 설계: 목록, 추가 패널, 추천 레일, 상세 재생 화면으로 구성
-3. 작업 설계: 소스 분석, 추천, 시간대, 테마를 순수 함수로 분리
-4. 검증 및 피드백: 단위 테스트, 빌드, 브라우저 상호작용으로 검증
-5. 개선 루프: 브라우저 검증 중 사용자 추가곡 삭제 기능을 추가
-6. 완결 검증: audit, test, build, 실제 브라우저 플로우를 재확인
-
-## 하네스
-
-핵심 로직은 UI와 분리되어 테스트됩니다.
+## 검증
 
 ```bash
 npm run test
 npm run build
-npm audit --audit-level=moderate
 ```
 
-테스트 대상:
-
-- YouTube URL 분석 및 autoplay URL 생성
-- Suno/Udio/Stable Audio/직접 오디오 파일 소스 분석
-- YouTube Data API 검색 URL 생성 및 결과 정규화
-- YouTube 영상 메타데이터 자동 채움
-- 오디오 파일/음악생성앱 링크 기본 메타데이터 추정
-- 추천 레인의 50:50 비율
-- 객관 검증 점수 하한 필터
-- 시간대 판정 및 시간대 곡 선택
-- 곡 분위기 기반 CSS 변수 생성
-
-## 다음 확장 지점
-
-- `src/lib/source.ts`: YouTube/Spotify/SoundCloud/Suno/Udio provider 실제 메타데이터 연결
-- `src/lib/youtubeData.ts`: YouTube Data API v3 검색 호출
-- `src/lib/discovery.ts`: 로컬 벡터 검색 또는 추가 큐레이션 연결
-- `src/lib/recommendations.ts`: 청취 이력, 좋아요, 시간대 반응을 반영한 추천 강화
-- 가사 API: 저작권 정책이 명확한 provider만 연결
+테스트 범위:
+- 소스 URL 분석, YouTube 메타데이터, 추천 50:50
+- 시간대 선곡, 라이브러리 필터/재생 기록
+- 설정 저장 및 백업 import/export
