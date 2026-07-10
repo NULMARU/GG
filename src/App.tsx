@@ -1915,15 +1915,18 @@ function DetailView({
       </section>
 
       <aside className="track-detail">
-        <div className="cover-large" aria-hidden="true">
-          {artUrl ? (
-            <img src={artUrl} alt="" />
-          ) : (
-            <div className="cover-mark">
-              <Music2 size={42} />
-            </div>
-          )}
-        </div>
+        {/* YouTube 등 임베드 재생 중에는 중복 정적 커버를 숨김 */}
+        {!iframeSrc ? (
+          <div className="cover-large" aria-hidden="true">
+            {artUrl ? (
+              <img src={artUrl} alt="" />
+            ) : (
+              <div className="cover-mark">
+                <Music2 size={42} />
+              </div>
+            )}
+          </div>
+        ) : null}
 
         <p className="eyebrow">{source.label}</p>
         <h1>{track.title}</h1>
